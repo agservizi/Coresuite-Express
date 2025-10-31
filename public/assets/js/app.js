@@ -656,7 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         event.preventDefault();
-        const href = link.getAttribute('href');
+        const href = link.href;
         if (!href) {
           return;
         }
