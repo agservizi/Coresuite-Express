@@ -312,6 +312,85 @@ if ($page === 'notifications_mark_all_read') {
     exit;
 }
 
+if ($page === 'notifications_stream') {
+    if ($method !== 'GET') {
+        http_response_code(405);
+        exit;
+    }
+
+    if (!isset($systemNotificationService)) {
+        http_response_code(503);
+        exit;
+    }
+
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Connection: keep-alive');
+    if (function_exists('header_remove')) {
+        header_remove('Content-Length');
+    }
+    @ini_set('output_buffering', 'off');
+    @ini_set('zlib.output_compression', '0');
+    set_time_limit(0);
+    ignore_user_abort(true);
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+
+    $userId = null;
+    if (is_array($currentUser) && isset($currentUser['id'])) {
+        $userId = (int) $currentUser['id'];
+    }
+
+    $lastId = isset($_GET['last_id']) ? (int) $_GET['last_id'] : 0;
+    $sleepInterval = 5;
+    $maxRuntime = 300; // seconds
+    $startedAt = time();
+
+    echo "retry: 8000\n\n";
+    while (@ob_end_flush()) {
+        // drain existing buffers
+    }
+    flush();
+
+    while (!connection_aborted()) {
+        if ((time() - $startedAt) >= $maxRuntime) {
+            break;
+        }
+
+        $payload = $systemNotificationService->getStreamPayload($userId, $lastId);
+        $items = $payload['items'] ?? [];
+
+        if ($items !== []) {
+            $lastId = (int) ($payload['last_id'] ?? $lastId);
+            $eventData = json_encode([
+                'items' => $items,
+                'unread_count' => (int) ($payload['unread_count'] ?? 0),
+                'last_id' => $lastId,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            if ($eventData !== false) {
+                echo "event: notifications\n";
+                echo 'data: ' . $eventData . "\n\n";
+                flush();
+            }
+        }
+
+        $heartbeat = json_encode(['time' => time()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($heartbeat !== false) {
+            echo "event: heartbeat\n";
+            echo 'data: ' . $heartbeat . "\n\n";
+            flush();
+        }
+
+        sleep($sleepInterval);
+    }
+
+    exit;
+}
+
 switch ($page) {
     case 'dashboard':
         $period = $_GET['period'] ?? 'day';

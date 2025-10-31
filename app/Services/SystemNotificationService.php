@@ -117,34 +117,61 @@ final class SystemNotificationService
         $stmt->execute();
 
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        $items = [];
-        foreach ($rows as $row) {
-            $meta = [];
-            if (!empty($row['meta_json'])) {
-                $decoded = json_decode((string) $row['meta_json'], true);
-                if (is_array($decoded)) {
-                    $meta = $decoded;
-                }
-            }
-            $isRead = (int) ($row['is_read'] ?? 0) === 1;
-            $items[] = [
-                'id' => (int) $row['id'],
-                'type' => (string) ($row['type'] ?? 'system'),
-                'title' => (string) ($row['title'] ?? ''),
-                'body' => (string) ($row['body'] ?? ''),
-                'level' => $this->normalizeLevel((string) ($row['level'] ?? 'info')),
-                'channel' => (string) ($row['channel'] ?? ($row['type'] ?? 'system')),
-                'source' => (string) ($row['source'] ?? 'system'),
-                'link' => isset($row['link']) && $row['link'] !== '' ? (string) $row['link'] : null,
-                'meta' => $meta,
-                'is_read' => $isRead,
-                'created_at' => (string) ($row['created_at'] ?? ''),
-            ];
+        $items = array_map(fn (array $row): array => $this->hydrateNotificationRow($row), $rows);
+
+        return [
+            'items' => $items,
+            'unread_count' => $this->countUnread($userId),
+        ];
+    }
+
+    /**
+     * @return array{items: array<int, array<string, mixed>>, unread_count:int, last_id:int}
+     */
+    public function getStreamPayload(?int $userId, int $afterId, int $limit = 15): array
+    {
+        $limit = max(1, min($limit, 50));
+        $afterId = max(0, $afterId);
+
+        $baseCondition = 'id > :after';
+        $params = [
+            ':after' => $afterId,
+        ];
+
+        if ($userId !== null) {
+            $baseCondition .= ' AND (recipient_user_id IS NULL OR recipient_user_id = :uid)';
+            $params[':uid'] = $userId;
+        } else {
+            $baseCondition .= ' AND recipient_user_id IS NULL';
+        }
+
+        $sql = 'SELECT id, type, title, body, level, channel, source, link, meta_json, recipient_user_id, is_read, created_at
+                FROM system_notifications
+                WHERE ' . $baseCondition . '
+                ORDER BY id ASC
+                LIMIT :limit';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':after', $params[':after'], PDO::PARAM_INT);
+        if (array_key_exists(':uid', $params)) {
+            $stmt->bindValue(':uid', (int) $params[':uid'], PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $items = array_map(fn (array $row): array => $this->hydrateNotificationRow($row), $rows);
+
+        $lastId = $afterId;
+        if ($items !== []) {
+            $lastItem = $items[array_key_last($items)];
+            $lastId = (int) ($lastItem['id'] ?? $afterId);
         }
 
         return [
             'items' => $items,
             'unread_count' => $this->countUnread($userId),
+            'last_id' => $lastId,
         ];
     }
 
@@ -203,6 +230,37 @@ final class SystemNotificationService
         $stmt->execute($params);
 
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function hydrateNotificationRow(array $row): array
+    {
+        $meta = [];
+        if (!empty($row['meta_json'])) {
+            $decoded = json_decode((string) $row['meta_json'], true);
+            if (is_array($decoded)) {
+                $meta = $decoded;
+            }
+        }
+
+        $isRead = (int) ($row['is_read'] ?? 0) === 1;
+
+        return [
+            'id' => (int) $row['id'],
+            'type' => (string) ($row['type'] ?? 'system'),
+            'title' => (string) ($row['title'] ?? ''),
+            'body' => (string) ($row['body'] ?? ''),
+            'level' => $this->normalizeLevel((string) ($row['level'] ?? 'info')),
+            'channel' => (string) ($row['channel'] ?? ($row['type'] ?? 'system')),
+            'source' => (string) ($row['source'] ?? 'system'),
+            'link' => isset($row['link']) && $row['link'] !== '' ? (string) $row['link'] : null,
+            'meta' => $meta,
+            'is_read' => $isRead,
+            'created_at' => (string) ($row['created_at'] ?? ''),
+        ];
     }
 
     /**

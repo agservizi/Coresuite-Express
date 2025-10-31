@@ -323,14 +323,63 @@ document.addEventListener('DOMContentLoaded', () => {
   window.notify = notify;
 
   const notificationRoot = document.querySelector('[data-notification]');
+  const notificationDisplayLimit = 20;
+  const notificationStorageLimit = notificationDisplayLimit * 2;
+  const notificationChannelLabels = {
+    sales: 'Vendite',
+    stock: 'Scorte SIM',
+    product_stock: 'Magazzino prodotti',
+    system: 'Sistema',
+  };
+
   if (notificationRoot) {
     const toggleBtn = notificationRoot.querySelector('[data-notification-toggle]');
     const panel = notificationRoot.querySelector('[data-notification-panel]');
     const badge = notificationRoot.querySelector('[data-notification-badge]');
     const counter = notificationRoot.querySelector('[data-notification-counter]');
     const markForm = notificationRoot.querySelector('[data-notification-mark]');
-    const notificationItems = notificationRoot.querySelectorAll('.topbar__notification-item');
+    const listNode = notificationRoot.querySelector('[data-notification-list]');
     let isOpen = false;
+    let notificationSource = null;
+
+    const normalizeNotification = raw => {
+      if (!raw) {
+        return null;
+      }
+      const id = Number.parseInt(raw.id, 10);
+      if (!Number.isFinite(id) || id <= 0) {
+        return null;
+      }
+      const link = typeof raw.link === 'string' ? raw.link.trim() : '';
+      return {
+        id,
+        type: typeof raw.type === 'string' ? raw.type : 'system',
+        title: typeof raw.title === 'string' ? raw.title : '',
+        body: typeof raw.body === 'string' ? raw.body : '',
+        level: typeof raw.level === 'string' ? raw.level : 'info',
+        channel: typeof raw.channel === 'string' ? raw.channel : '',
+        source: typeof raw.source === 'string' ? raw.source : 'system',
+        link: link !== '' ? link : null,
+        meta: typeof raw.meta === 'object' && raw.meta !== null ? raw.meta : {},
+        is_read: Boolean(raw.is_read),
+        created_at: typeof raw.created_at === 'string' ? raw.created_at : '',
+      };
+    };
+
+    const initialPayload = typeof window.AppNotifications === 'object' && window.AppNotifications !== null
+      ? window.AppNotifications
+      : { items: [], unread_count: 0 };
+
+    let notificationsState = {
+      items: Array.isArray(initialPayload.items)
+        ? initialPayload.items.map(item => normalizeNotification(item)).filter(item => item !== null)
+        : [],
+      unread_count: Number.parseInt(initialPayload.unread_count, 10) || 0,
+    };
+
+    let notificationLastId = notificationsState.items.reduce((max, item) => Math.max(max, item.id), 0);
+
+    delete window.AppNotifications;
 
     const setOpen = open => {
       if (!panel || !toggleBtn) {
@@ -339,10 +388,8 @@ document.addEventListener('DOMContentLoaded', () => {
       isOpen = open;
       panel.setAttribute('data-open', open ? 'true' : 'false');
       toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open) {
-        if (typeof panel.focus === 'function') {
-          panel.focus();
-        }
+      if (open && typeof panel.focus === 'function') {
+        panel.focus();
       }
     };
 
@@ -378,8 +425,140 @@ document.addEventListener('DOMContentLoaded', () => {
       if (counter) {
         counter.textContent = `${safeCount} non lett${safeCount === 1 ? 'a' : 'e'}`;
       }
-      notificationItems.forEach(item => item.classList.remove('is-unread'));
     };
+
+    const formatNotificationTime = timestamp => {
+      if (!timestamp) {
+        return '';
+      }
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+      const diffSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
+      if (diffSeconds < 60) {
+        return 'Pochi secondi fa';
+      }
+      if (diffSeconds < 3600) {
+        const minutes = Math.floor(diffSeconds / 60);
+        return `${minutes} min fa`;
+      }
+      if (diffSeconds < 86400) {
+        const hours = Math.floor(diffSeconds / 3600);
+        return `${hours} h fa`;
+      }
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${day}/${month} ${hours}:${minutes}`;
+    };
+
+    const buildNotificationHtml = item => {
+      if (!item) {
+        return '';
+      }
+      const title = item.title || item.body || '';
+      const body = item.body && item.body !== title ? item.body : '';
+      const normalizedLevel = (item.level || 'info').toString().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'info';
+      const itemClasses = ['topbar__notification-item', `level-${normalizedLevel}`];
+      if (!item.is_read) {
+        itemClasses.push('is-unread');
+      }
+      const channelKey = (item.channel || item.type || 'system').toString().toLowerCase();
+      const channelLabel = notificationChannelLabels[channelKey] || (channelKey ? channelKey.charAt(0).toUpperCase() + channelKey.slice(1) : 'Sistema');
+      const timeLabel = formatNotificationTime(item.created_at);
+      const metaHtml = `<span class="topbar__notification-meta"><span class="topbar__notification-channel">${escapeHtml(channelLabel)}</span>${timeLabel ? `<span class="topbar__notification-time">${escapeHtml(timeLabel)}</span>` : ''}</span>`;
+      const titleHtml = `<span class="topbar__notification-title">${escapeHtml(title)}</span>`;
+      const bodyHtml = body ? `<p class="topbar__notification-body">${escapeHtml(body)}</p>` : '';
+      const content = `${titleHtml}${bodyHtml}${metaHtml}`;
+
+      if (item.link) {
+        return `<li class="${itemClasses.join(' ')}"><a href="${escapeHtml(item.link)}" class="topbar__notification-link">${content}</a></li>`;
+      }
+      return `<li class="${itemClasses.join(' ')}">${content}</li>`;
+    };
+
+    const renderNotificationState = () => {
+      if (listNode instanceof HTMLElement) {
+        const sortedItems = notificationsState.items.slice().sort((a, b) => b.id - a.id);
+        const visibleItems = sortedItems.slice(0, notificationDisplayLimit);
+        if (visibleItems.length === 0) {
+          listNode.innerHTML = '<li class="topbar__notification-empty">Nessuna notifica recente.</li>';
+        } else {
+          listNode.innerHTML = visibleItems.map(buildNotificationHtml).join('');
+        }
+      }
+      updateUnreadUi(notificationsState.unread_count);
+    };
+
+    const mergeNotifications = incoming => {
+      if (!Array.isArray(incoming) || incoming.length === 0) {
+        return;
+      }
+      const byId = new Map();
+      notificationsState.items.forEach(item => {
+        if (item) {
+          byId.set(item.id, item);
+        }
+      });
+      incoming.forEach(raw => {
+        const normalized = normalizeNotification(raw);
+        if (!normalized) {
+          return;
+        }
+        byId.set(normalized.id, normalized);
+        if (normalized.id > notificationLastId) {
+          notificationLastId = normalized.id;
+        }
+      });
+      const merged = Array.from(byId.values()).sort((a, b) => b.id - a.id);
+      notificationsState = {
+        ...notificationsState,
+        items: merged.slice(0, notificationStorageLimit),
+      };
+    };
+
+    const connectNotificationStream = () => {
+      if (!('EventSource' in window)) {
+        return;
+      }
+
+      if (notificationSource) {
+        notificationSource.close();
+      }
+
+      const streamUrl = `index.php?page=notifications_stream&last_id=${encodeURIComponent(notificationLastId)}`;
+      const source = new EventSource(streamUrl);
+      notificationSource = source;
+
+      source.addEventListener('notifications', event => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload && Array.isArray(payload.items)) {
+            mergeNotifications(payload.items);
+          }
+          if (payload && typeof payload.unread_count === 'number') {
+            notificationsState.unread_count = payload.unread_count;
+          }
+          if (payload && typeof payload.last_id === 'number' && payload.last_id > notificationLastId) {
+            notificationLastId = payload.last_id;
+          }
+          renderNotificationState();
+        } catch (error) {
+          console.error('Notifiche live non elaborate', error);
+        }
+      });
+
+      source.addEventListener('error', () => {
+        source.close();
+        notificationSource = null;
+        window.setTimeout(connectNotificationStream, 5000);
+      });
+    };
+
+    renderNotificationState();
+    connectNotificationStream();
 
     if (markForm) {
       markForm.addEventListener('submit', event => {
@@ -398,7 +577,12 @@ document.addEventListener('DOMContentLoaded', () => {
           })
           .then(payload => {
             if (payload && payload.success) {
-              updateUnreadUi(0);
+              notificationsState = {
+                ...notificationsState,
+                items: notificationsState.items.map(item => ({ ...item, is_read: true })),
+                unread_count: 0,
+              };
+              renderNotificationState();
               setOpen(false);
             } else {
               markForm.submit();
