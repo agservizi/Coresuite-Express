@@ -486,9 +486,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!item || !item.id) {
         return null;
       }
-      if (item.link) {
-        return item.link;
-      }
       return `index.php?page=notifications&focus=${encodeURIComponent(item.id)}`;
     };
 
