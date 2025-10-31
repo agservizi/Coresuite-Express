@@ -21,6 +21,7 @@ $feedbackRefund = $feedbackRefund ?? null;
 $discountCampaigns = $discountCampaigns ?? [];
 $taxRate = (float) ($GLOBALS['config']['app']['tax_rate'] ?? 0.0);
 $taxNote = $GLOBALS['config']['app']['tax_note'] ?? "Operazione non soggetta a IVA ai sensi dell'art. 74 DPR 633/72";
+$pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
 ?>
 <section class="page">
     <header class="page__header">
@@ -35,6 +36,12 @@ $taxNote = $GLOBALS['config']['app']['tax_note'] ?? "Operazione non soggetta a I
                     <?php foreach ($feedbackCreate['errors'] ?? [] as $error): ?>
                         <p><?= htmlspecialchars($error) ?></p>
                     <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($feedbackCreate && ($feedbackCreate['success'] ?? false)): ?>
+                <div class="alert alert--success">
+                    <p>Vendita registrata correttamente. L'anteprima di stampa è disponibile qui sotto.</p>
                 </div>
             <?php endif; ?>
 
@@ -332,6 +339,19 @@ $taxNote = $GLOBALS['config']['app']['tax_note'] ?? "Operazione non soggetta a I
                     <button type="submit" class="btn btn--primary">Salva e stampa</button>
                 </footer>
             </form>
+
+            <?php if ($feedbackCreate && ($feedbackCreate['success'] ?? false)): ?>
+                <section class="page__section">
+                    <header class="section__header">
+                        <h3>Azioni rapide</h3>
+                        <span>Documento #<?= (int) ($feedbackCreate['sale_id'] ?? 0) ?></span>
+                    </header>
+                    <div class="page__actions">
+                        <a class="btn btn--secondary" href="print_receipt.php?sale_id=<?= (int) ($feedbackCreate['sale_id'] ?? 0) ?>" target="_blank" rel="noopener" data-print-receipt>Apri anteprima scontrino</a>
+                        <a class="btn btn--link" href="index.php?page=sales_list">Vai alla lista vendite</a>
+                    </div>
+                </section>
+            <?php endif; ?>
         </div>
 
         <aside class="sales-layout__side">
@@ -426,6 +446,22 @@ $taxNote = $GLOBALS['config']['app']['tax_note'] ?? "Operazione non soggetta a I
         </aside>
     </div>
 </section>
+
+<?php if ($pendingReceiptId > 0): ?>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const receiptUrl = 'print_receipt.php?sale_id=<?= $pendingReceiptId ?>';
+        window.dispatchEvent(new CustomEvent('app:openReceipt', { detail: { url: receiptUrl } }));
+        try {
+            const cleaned = new URL(window.location.href);
+            cleaned.searchParams.delete('print');
+            window.history.replaceState({}, document.title, cleaned);
+        } catch (error) {
+            console.error('Impossibile aggiornare l\'URL', error);
+        }
+    });
+</script>
+<?php endif; ?>
 
 <template id="refund-item-row-template">
     <tr class="refund-item-row">

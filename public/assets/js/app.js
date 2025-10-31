@@ -786,6 +786,13 @@ document.addEventListener('DOMContentLoaded', () => {
       event.preventDefault();
       openReceiptModal(href);
     });
+
+    window.addEventListener('app:openReceipt', event => {
+      if (!event || !event.detail || !event.detail.url) {
+        return;
+      }
+      openReceiptModal(event.detail.url);
+    });
   }
 
   const seededToasts = Array.isArray(window.AppInitialToasts) ? window.AppInitialToasts : [];

@@ -1159,7 +1159,8 @@ switch ($page) {
 
             $feedback = $salesController->create($currentUser['id'], $_POST);
             if (($feedback['success'] ?? false) === true) {
-                header('Location: print_receipt.php?sale_id=' . $feedback['sale_id']);
+                $_SESSION['sale_create_feedback'] = $feedback;
+                header('Location: index.php?page=sales_create&print=' . (int) $feedback['sale_id']);
                 exit;
             }
 
