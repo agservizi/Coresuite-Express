@@ -644,6 +644,27 @@ document.addEventListener('DOMContentLoaded', () => {
           });
       });
     }
+
+    if (listNode instanceof HTMLElement) {
+      listNode.addEventListener('click', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const link = target.closest('.topbar__notification-link');
+        if (!(link instanceof HTMLAnchorElement)) {
+          return;
+        }
+        event.preventDefault();
+        const href = link.getAttribute('href');
+        if (!href) {
+          return;
+        }
+        setOpen(false);
+        clearBellAttention();
+        window.location.href = href;
+      });
+    }
   }
 
   const seededToasts = Array.isArray(window.AppInitialToasts) ? window.AppInitialToasts : [];
