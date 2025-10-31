@@ -41,7 +41,7 @@ $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
 
             <?php if ($feedbackCreate && ($feedbackCreate['success'] ?? false)): ?>
                 <div class="alert alert--success">
-                    <p>Vendita registrata correttamente. L'anteprima di stampa è disponibile qui sotto.</p>
+                    <p>Vendita registrata correttamente. L'anteprima di stampa si è aperta automaticamente.</p>
                 </div>
             <?php endif; ?>
 
@@ -341,16 +341,9 @@ $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
             </form>
 
             <?php if ($feedbackCreate && ($feedbackCreate['success'] ?? false)): ?>
-                <section class="page__section">
-                    <header class="section__header">
-                        <h3>Azioni rapide</h3>
-                        <span>Documento #<?= (int) ($feedbackCreate['sale_id'] ?? 0) ?></span>
-                    </header>
-                    <div class="page__actions">
-                        <a class="btn btn--secondary" href="print_receipt.php?sale_id=<?= (int) ($feedbackCreate['sale_id'] ?? 0) ?>" target="_blank" rel="noopener" data-print-receipt>Apri anteprima scontrino</a>
-                        <a class="btn btn--link" href="index.php?page=sales_list">Vai alla lista vendite</a>
-                    </div>
-                </section>
+                <div class="page__actions">
+                    <a class="btn btn--link" href="index.php?page=sales_list">Vai alla lista vendite</a>
+                </div>
             <?php endif; ?>
         </div>
 
