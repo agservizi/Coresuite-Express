@@ -269,7 +269,7 @@ if ($notificationsPayload === false) {
                 <span class="modal__loader-spinner" aria-hidden="true"></span>
                 <span class="modal__loader-label">Caricamento anteprima…</span>
             </div>
-            <iframe data-receipt-frame title="Anteprima scontrino" sandbox="allow-same-origin allow-scripts allow-downloads"></iframe>
+            <iframe data-receipt-frame title="Anteprima scontrino"></iframe>
         </div>
     </div>
 </div>
