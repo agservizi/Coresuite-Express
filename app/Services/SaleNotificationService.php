@@ -11,7 +11,8 @@ final class SaleNotificationService
         private ?string $fromName,
         private ?string $recipientEmail,
         private string $appName,
-        private ?string $logFile = null
+        private ?string $logFile = null,
+        private ?SystemNotificationService $notificationService = null
     ) {
     }
 
@@ -109,17 +110,27 @@ final class SaleNotificationService
             $receiptUrl
         );
 
+        $sent = false;
+        $channelsUsed = [];
+
         if ($this->sendViaResend($recipients, $subject, $textBody, $htmlBody, $saleId)) {
-            return true;
+            $sent = true;
+            $channelsUsed[] = 'email:resend';
+        } else {
+            $fallback = $this->sendViaMailFallback($recipients, $subject, $textBody, $saleId);
+            if ($fallback) {
+                $sent = true;
+                $channelsUsed[] = 'email:mail';
+            }
         }
 
-        $fallback = $this->sendViaMailFallback($recipients, $subject, $textBody, $saleId);
-        if ($fallback) {
-            return true;
+        if (!$sent) {
+            $this->log('Sale #' . $saleId . ' email failed on both Resend and PHP mail().');
         }
 
-        $this->log('Sale #' . $saleId . ' email failed on both Resend and PHP mail().');
-        return false;
+        $this->emitSaleNotification($sale, $sent, $channelsUsed, $subject);
+
+        return $sent;
     }
 
     /**
@@ -485,6 +496,54 @@ a { color: #2563eb; text-decoration: none; }
 HTML;
 
         return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $sale
+     * @param array<int, string> $channelsUsed
+     */
+    private function emitSaleNotification(array $sale, bool $emailSent, array $channelsUsed, string $subject): void
+    {
+        if ($this->notificationService === null) {
+            return;
+        }
+
+        $saleId = (int) ($sale['id'] ?? 0);
+        if ($saleId <= 0) {
+            return;
+        }
+
+        $total = (float) ($sale['total'] ?? 0.0);
+        $customerName = $this->resolveCustomerName($sale) ?? 'Cliente non registrato';
+        $paymentStatus = (string) ($sale['payment_status'] ?? ($sale['status'] ?? 'Completed'));
+        $body = sprintf(
+            'Totale € %s · Pagamento: %s · %s',
+            number_format($total, 2, ',', '.'),
+            $paymentStatus,
+            $emailSent ? 'Email inviata automaticamente.' : 'Verifica l\'invio dell\'email al cliente.'
+        );
+
+        $meta = [
+            'sale_id' => $saleId,
+            'customer_name' => $customerName,
+            'total' => $total,
+            'payment_status' => $paymentStatus,
+            'email_sent' => $emailSent,
+            'channels' => $channelsUsed,
+        ];
+
+        $this->notificationService->push(
+            'sale_completed',
+            $subject,
+            $body,
+            [
+                'level' => $emailSent ? 'success' : 'warning',
+                'channel' => 'sales',
+                'source' => 'sale_notification_service',
+                'link' => 'index.php?page=sales_list',
+                'meta' => $meta,
+            ]
+        );
     }
 
     private function sendViaResend(array $recipients, string $subject, string $textBody, string $htmlBody, int $saleId): bool

@@ -135,7 +135,7 @@ final class CustomerPortalAuthService
      */
     public function createInvitation(int $customerId, string $email): array
     {
-        $normalizedEmail = trim(mb_strtolower($email));
+    $normalizedEmail = trim((function_exists('mb_strtolower') ? mb_strtolower($email) : strtolower($email)));
         if ($normalizedEmail === '') {
             return [
                 'success' => false,

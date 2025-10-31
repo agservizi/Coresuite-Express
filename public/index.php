@@ -172,6 +172,8 @@ use App\Services\SalesService;
 use App\Services\StockMonitorService;
 use App\Services\SupportRequestService;
 use App\Services\UserService;
+use App\Services\NotificationDispatcher;
+use App\Services\SystemNotificationService;
 
 $pdo = Database::getConnection();
 
@@ -196,6 +198,16 @@ if ($portalLoginUrl === null && !empty($_SERVER['HTTP_HOST'])) {
 }
 $logPath = __DIR__ . '/../storage/logs/stock_alerts.log';
 $saleNotificationLog = __DIR__ . '/../storage/logs/sale_notifications.log';
+$notificationsConfig = $GLOBALS['config']['notifications'] ?? [];
+$notificationsLog = __DIR__ . '/../storage/logs/notifications.log';
+$notificationDispatcher = new NotificationDispatcher(
+    $notificationsConfig['webhook_url'] ?? null,
+    is_array($notificationsConfig['webhook_headers'] ?? null) ? $notificationsConfig['webhook_headers'] : [],
+    is_array($notificationsConfig['queue'] ?? null) ? $notificationsConfig['queue'] : null,
+    $notificationsLog
+);
+$systemNotificationService = new SystemNotificationService($pdo, $notificationDispatcher, $notificationsLog);
+$GLOBALS['systemNotificationService'] = $systemNotificationService;
 
 if ($saleFulfilmentEmail === null || !filter_var($saleFulfilmentEmail, FILTER_VALIDATE_EMAIL)) {
     $saleFulfilmentEmail = $alertEmail;
@@ -212,14 +224,15 @@ $salesService = new SalesService($pdo);
 $discountCampaignService = new DiscountCampaignService($pdo);
 $supportRequestService = new SupportRequestService($pdo);
 $userService = new UserService($pdo);
-$stockMonitorService = new StockMonitorService($pdo, $alertEmail, $logPath, $resendApiKey, $resendFrom);
+$stockMonitorService = new StockMonitorService($pdo, $alertEmail, $logPath, $resendApiKey, $resendFrom, $systemNotificationService);
 $saleNotificationService = new SaleNotificationService(
     $resendApiKey,
     $resendFrom,
     $resendFromName,
     $saleFulfilmentEmail,
     $appName,
-    $saleNotificationLog
+    $saleNotificationLog,
+    $systemNotificationService
 );
 
 $authController = new AuthController($authService);
@@ -266,6 +279,36 @@ if ($page === 'login') {
         'appName' => $GLOBALS['config']['app']['name'] ?? 'Gestionale Telefonia',
         'oldInput' => ['username' => '', 'remember_me' => false],
     ], false);
+    exit;
+}
+
+if ($page === 'notifications_mark_all_read') {
+    if ($method !== 'POST') {
+        http_response_code(405);
+        exit;
+    }
+
+    $userId = null;
+    if (is_array($currentUser) && isset($currentUser['id'])) {
+        $userId = (int) $currentUser['id'];
+    }
+
+    if (isset($systemNotificationService)) {
+        $systemNotificationService->markAllRead($userId);
+    }
+
+    $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+        && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+    if ($isAjax) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true]);
+        exit;
+    }
+
+    $redirect = isset($_POST['redirect']) ? (string) $_POST['redirect'] : 'index.php';
+    $redirect = sanitizeInternalUrl($redirect, 'index.php');
+    header('Location: ' . $redirect);
     exit;
 }
 
@@ -1391,6 +1434,24 @@ function render(string $view, array $params = [], bool $layout = true): void
         $params['initialToasts'] = array_merge($sessionToasts, $params['initialToasts']);
     } else {
         $params['initialToasts'] = $sessionToasts;
+    }
+
+    if ($layout && !isset($params['topbarNotifications'])) {
+        $globalNotificationService = $GLOBALS['systemNotificationService'] ?? null;
+        if ($globalNotificationService instanceof \App\Services\SystemNotificationService) {
+            $userCandidate = $params['currentUser'] ?? null;
+            $userIdForNotifications = null;
+            if (is_array($userCandidate) && isset($userCandidate['id'])) {
+                $userIdForNotifications = (int) $userCandidate['id'];
+            }
+
+            $limit = (int) ($GLOBALS['config']['notifications']['topbar_limit'] ?? 10);
+            if ($limit <= 0) {
+                $limit = 10;
+            }
+
+            $params['topbarNotifications'] = $globalNotificationService->getTopbarFeed($userIdForNotifications, $limit);
+        }
     }
 
     extract($params, EXTR_SKIP);

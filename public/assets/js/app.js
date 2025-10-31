@@ -322,6 +322,95 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.notify = notify;
 
+  const notificationRoot = document.querySelector('[data-notification]');
+  if (notificationRoot) {
+    const toggleBtn = notificationRoot.querySelector('[data-notification-toggle]');
+    const panel = notificationRoot.querySelector('[data-notification-panel]');
+    const badge = notificationRoot.querySelector('[data-notification-badge]');
+    const counter = notificationRoot.querySelector('[data-notification-counter]');
+    const markForm = notificationRoot.querySelector('[data-notification-mark]');
+    const notificationItems = notificationRoot.querySelectorAll('.topbar__notification-item');
+    let isOpen = false;
+
+    const setOpen = open => {
+      if (!panel || !toggleBtn) {
+        return;
+      }
+      isOpen = open;
+      panel.setAttribute('data-open', open ? 'true' : 'false');
+      toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        if (typeof panel.focus === 'function') {
+          panel.focus();
+        }
+      }
+    };
+
+    if (toggleBtn && panel) {
+      toggleBtn.addEventListener('click', () => {
+        setOpen(!isOpen);
+      });
+
+      document.addEventListener('click', event => {
+        if (!notificationRoot.contains(event.target) && isOpen) {
+          setOpen(false);
+        }
+      });
+
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && isOpen) {
+          setOpen(false);
+        }
+      });
+    }
+
+    const updateUnreadUi = count => {
+      const safeCount = Math.max(0, Number.parseInt(count, 10) || 0);
+      if (badge) {
+        if (safeCount > 0) {
+          badge.textContent = Math.min(safeCount, 99).toString();
+          badge.hidden = false;
+        } else {
+          badge.textContent = '';
+          badge.hidden = true;
+        }
+      }
+      if (counter) {
+        counter.textContent = `${safeCount} non lett${safeCount === 1 ? 'a' : 'e'}`;
+      }
+      notificationItems.forEach(item => item.classList.remove('is-unread'));
+    };
+
+    if (markForm) {
+      markForm.addEventListener('submit', event => {
+        event.preventDefault();
+        const formData = new FormData(markForm);
+        fetch(markForm.action, {
+          method: 'POST',
+          body: formData,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Request failed');
+            }
+            return response.json();
+          })
+          .then(payload => {
+            if (payload && payload.success) {
+              updateUnreadUi(0);
+              setOpen(false);
+            } else {
+              markForm.submit();
+            }
+          })
+          .catch(() => {
+            markForm.submit();
+          });
+      });
+    }
+  }
+
   const seededToasts = Array.isArray(window.AppInitialToasts) ? window.AppInitialToasts : [];
   seededToasts.forEach(toast => toastManager.show(toast));
   delete window.AppInitialToasts;

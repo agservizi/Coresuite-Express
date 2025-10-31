@@ -26,6 +26,19 @@ Gestionale web minimale per negozio di telefonia, pensato per essere avviato vel
    ```
 6. Visita [http://127.0.0.1:8000](http://127.0.0.1:8000) e accedi con l'utente creato.
 
+## Variabili ambiente opzionali
+| Variabile | Descrizione |
+| --- | --- |
+| `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_FROM_NAME` | Configurano l'invio email via Resend per credenziali clienti e notifiche vendite. |
+| `SALES_FULFILMENT_EMAIL` | Email predefinita che riceve le conferme di vendita generate automaticamente. |
+| `NOTIFICATIONS_WEBHOOK_URL` | URL (o lista separata da virgole) di webhook da notificare quando viene registrato un alert o una vendita. |
+| `NOTIFICATIONS_WEBHOOK_HEADERS` | Intestazioni aggiuntive per i webhook (JSON o formato `Header:Valore`). |
+| `NOTIFICATIONS_QUEUE_DSN` | DSN AMQP (`amqp://user:pass@host:5672/vhost`) per pubblicare gli eventi su RabbitMQ. |
+| `NOTIFICATIONS_QUEUE_EXCHANGE` | Exchange AMQP da usare (default `coresuite.notifications`). |
+| `NOTIFICATIONS_QUEUE_ROUTING_KEY` | Routing key per la pubblicazione (default `event`). |
+| `NOTIFICATIONS_QUEUE_NAME` | Nome coda da dichiarare/bindare automaticamente (facoltativo). |
+| `NOTIFICATIONS_TOPBAR_LIMIT` | Numero massimo di notifiche mostrate nel menu rapido (default `10`). |
+
 ## Funzionalità incluse
 - Login con ruoli (`admin`, `cassiere`), session hardening con `session_regenerate_id`
 - Import CSV ICCID (validazione lunghezza 19-20 cifre, transazioni, gestione duplicati)

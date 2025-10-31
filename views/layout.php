@@ -44,6 +44,59 @@ if (is_array($currentUser)) {
 if ($userInitial === null || $userInitial === '') {
     $userInitial = 'C';
 }
+
+$topbarNotifications = $topbarNotifications ?? ['items' => [], 'unread_count' => 0];
+if (!is_array($topbarNotifications)) {
+    $topbarNotifications = ['items' => [], 'unread_count' => 0];
+}
+if (!isset($topbarNotifications['items']) || !is_array($topbarNotifications['items'])) {
+    $topbarNotifications['items'] = [];
+}
+$topbarNotifications['unread_count'] = (int) ($topbarNotifications['unread_count'] ?? 0);
+
+$formatNotificationTime = static function (?string $timestamp): string {
+    if ($timestamp === null || $timestamp === '') {
+        return '';
+    }
+
+    try {
+        $notificationTime = new \DateTimeImmutable($timestamp);
+        $now = new \DateTimeImmutable('now');
+    } catch (\Throwable) {
+        return '';
+    }
+
+    $diff = $now->getTimestamp() - $notificationTime->getTimestamp();
+
+    if ($diff < 60) {
+        return 'Pochi secondi fa';
+    }
+
+    if ($diff < 3600) {
+        $minutes = (int) floor($diff / 60);
+        return $minutes . ' min fa';
+    }
+
+    if ($diff < 86400) {
+        $hours = (int) floor($diff / 3600);
+        return $hours . ' h fa';
+    }
+
+    return $notificationTime->format('d/m H:i');
+};
+
+$currentRoute = $_SERVER['REQUEST_URI'] ?? 'index.php';
+$currentRoute = trim((string) $currentRoute);
+if ($currentRoute === '' || $currentRoute === '/') {
+    $currentRoute = 'index.php';
+} else {
+    if (str_starts_with($currentRoute, '/')) {
+        $currentRoute = ltrim($currentRoute, '/');
+    }
+    if (!str_starts_with($currentRoute, 'index.php')) {
+        $currentRoute = 'index.php';
+    }
+}
 ?>
 <!doctype html>
 <html lang="it">
@@ -99,6 +152,75 @@ if ($userInitial === null || $userInitial === '') {
             </div>
             <div class="topbar__actions">
                 <?php if ($currentUser): ?>
+                    <div class="topbar__notifications" data-notification>
+                        <button type="button" class="topbar__notification-toggle" data-notification-toggle aria-haspopup="true" aria-expanded="false">
+                            <span class="topbar__notification-icon" aria-hidden="true">🔔</span>
+                            <?php if ($topbarNotifications['unread_count'] > 0): ?>
+                                <span class="topbar__notification-badge" data-notification-badge><?= (int) min($topbarNotifications['unread_count'], 99) ?></span>
+                            <?php endif; ?>
+                            <span class="sr-only">Mostra notifiche</span>
+                        </button>
+                        <div class="topbar__notification-panel" data-notification-panel data-open="false" role="region" aria-label="Notifiche" tabindex="-1">
+                            <header class="topbar__notification-header">
+                                <span>Notifiche</span>
+                                <span class="topbar__notification-counter" data-notification-counter>
+                                    <?= (int) $topbarNotifications['unread_count'] ?> non lett<?= (int) $topbarNotifications['unread_count'] === 1 ? 'a' : 'e' ?>
+                                </span>
+                            </header>
+                            <ul class="topbar__notification-list" data-notification-list>
+                                <?php if ($topbarNotifications['items'] === []): ?>
+                                    <li class="topbar__notification-empty">Nessuna notifica recente.</li>
+                                <?php else: ?>
+                                    <?php foreach ($topbarNotifications['items'] as $notification): ?>
+                                        <?php
+                                            $title = (string) ($notification['title'] ?? '');
+                                            $body = (string) ($notification['body'] ?? '');
+                                            if ($title === '' && $body !== '') {
+                                                $title = $body;
+                                            }
+                                            $time = $formatNotificationTime($notification['created_at'] ?? null);
+                                            $isUnread = empty($notification['is_read']);
+                                            $level = preg_replace('/[^a-z0-9_-]/i', '', (string) ($notification['level'] ?? 'info'));
+                                            $channelKey = (string) ($notification['channel'] ?? 'system');
+                                            $channelLabels = [
+                                                'sales' => 'Vendite',
+                                                'stock' => 'Scorte SIM',
+                                                'product_stock' => 'Magazzino prodotti',
+                                                'system' => 'Sistema',
+                                            ];
+                                            $channelLabel = $channelLabels[$channelKey] ?? ucfirst($channelKey);
+                                            $link = isset($notification['link']) && $notification['link'] !== '' ? (string) $notification['link'] : null;
+                                            $itemClasses = 'topbar__notification-item level-' . $level . ($isUnread ? ' is-unread' : '');
+                                        ?>
+                                        <li class="<?= $itemClasses ?>">
+                                            <?php if ($link !== null): ?>
+                                                <a href="<?= htmlspecialchars($link) ?>" class="topbar__notification-link">
+                                            <?php endif; ?>
+                                                    <span class="topbar__notification-title"><?= htmlspecialchars($title) ?></span>
+                                                    <?php if ($body !== '' && $body !== $title): ?>
+                                                        <p class="topbar__notification-body"><?= htmlspecialchars($body) ?></p>
+                                                    <?php endif; ?>
+                                                    <span class="topbar__notification-meta">
+                                                        <span class="topbar__notification-channel"><?= htmlspecialchars($channelLabel) ?></span>
+                                                        <?php if ($time !== ''): ?>
+                                                            <span class="topbar__notification-time"><?= htmlspecialchars($time) ?></span>
+                                                        <?php endif; ?>
+                                                    </span>
+                                            <?php if ($link !== null): ?>
+                                                </a>
+                                            <?php endif; ?>
+                                        </li>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </ul>
+                            <footer class="topbar__notification-footer">
+                                <form method="post" action="index.php?page=notifications_mark_all_read" data-notification-mark>
+                                    <input type="hidden" name="redirect" value="<?= htmlspecialchars($currentRoute) ?>">
+                                    <button type="submit" class="topbar__notification-clear">Segna tutto come letto</button>
+                                </form>
+                            </footer>
+                        </div>
+                    </div>
                     <a class="topbar__action" href="index.php?page=sim_stock">
                         <span>Magazzino SIM</span>
                     </a>
@@ -132,10 +254,15 @@ $initialToastsPayload = json_encode($initialToasts, JSON_HEX_TAG | JSON_HEX_APOS
 if ($initialToastsPayload === false) {
     $initialToastsPayload = '[]';
 }
+$notificationsPayload = json_encode($topbarNotifications, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+if ($notificationsPayload === false) {
+    $notificationsPayload = '{"items":[],"unread_count":0}';
+}
 ?>
 <div class="toast-stack" data-toast-stack aria-live="polite" aria-atomic="true"></div>
 <script>
     window.AppInitialToasts = <?= $initialToastsPayload ?>;
+    window.AppNotifications = <?= $notificationsPayload ?>;
 </script>
 </body>
 </html>

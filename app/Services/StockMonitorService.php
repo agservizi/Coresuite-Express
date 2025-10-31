@@ -14,7 +14,8 @@ final class StockMonitorService
         private ?string $alertEmail = null,
         private ?string $logFile = null,
         private ?string $resendApiKey = null,
-        private ?string $resendFrom = null
+        private ?string $resendFrom = null,
+        private ?SystemNotificationService $notificationService = null
     ) {
     }
 
@@ -55,7 +56,14 @@ final class StockMonitorService
      */
     public function getProductInsights(): array
     {
-        $insights = $this->computeProductInsights();
+        try {
+            $insights = $this->computeProductInsights();
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
         return array_values($insights);
     }
 
@@ -64,13 +72,20 @@ final class StockMonitorService
      */
     public function getOpenProductAlerts(): array
     {
-        $stmt = $this->pdo->query(
-            'SELECT psa.*, pr.name AS product_name
-             FROM product_stock_alerts psa
-             JOIN products pr ON pr.id = psa.product_id
-             WHERE psa.status = "Open"
-             ORDER BY psa.created_at ASC'
-        );
+        try {
+            $stmt = $this->pdo->query(
+                'SELECT psa.*, pr.name AS product_name
+                 FROM product_stock_alerts psa
+                 JOIN products pr ON pr.id = psa.product_id
+                 WHERE psa.status = "Open"
+                 ORDER BY psa.created_at ASC'
+            );
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
 
         $rows = $stmt !== false ? $stmt->fetchAll() : [];
         foreach ($rows as &$row) {
@@ -266,12 +281,26 @@ final class StockMonitorService
      */
     private function checkProductThresholds(): array
     {
-        $insights = $this->computeProductInsights();
+        try {
+            $insights = $this->computeProductInsights();
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];
+            }
+            throw $exception;
+        }
         if ($insights === []) {
             return ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];
         }
 
-        $openAlerts = $this->fetchOpenProductAlertsIndexed();
+        try {
+            $openAlerts = $this->fetchOpenProductAlertsIndexed();
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];
+            }
+            throw $exception;
+        }
 
         $created = 0;
         $updated = 0;
@@ -318,12 +347,19 @@ final class StockMonitorService
      */
     private function fetchProductCatalog(): array
     {
-        $stmt = $this->pdo->query(
-            'SELECT id, name, stock_quantity, stock_reserved, reorder_threshold
-             FROM products
-             WHERE is_active = 1
-             ORDER BY name ASC'
-        );
+        try {
+            $stmt = $this->pdo->query(
+                'SELECT id, name, stock_quantity, stock_reserved, reorder_threshold
+                 FROM products
+                 WHERE is_active = 1
+                 ORDER BY name ASC'
+            );
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
 
         return $stmt !== false ? $stmt->fetchAll() : [];
     }
@@ -402,17 +438,24 @@ final class StockMonitorService
     {
         $fromDate = (new \DateTimeImmutable('-' . $lookbackDays . ' days'))->format('Y-m-d 00:00:00');
 
-        $stmt = $this->pdo->prepare(
-            'SELECT si.product_id, SUM(si.quantity) AS sold
-             FROM sale_items si
-             JOIN sales s ON s.id = si.sale_id
-             WHERE si.product_id IS NOT NULL
-               AND s.status = "Completed"
-               AND s.created_at >= :from_date
-             GROUP BY si.product_id'
-        );
-        $stmt->execute([':from_date' => $fromDate]);
-        $rows = $stmt->fetchAll();
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT si.product_id, SUM(si.quantity) AS sold
+                 FROM sale_items si
+                 JOIN sales s ON s.id = si.sale_id
+                 WHERE si.product_id IS NOT NULL
+                   AND s.status = "Completed"
+                   AND s.created_at >= :from_date
+                 GROUP BY si.product_id'
+            );
+            $stmt->execute([':from_date' => $fromDate]);
+            $rows = $stmt->fetchAll();
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
 
         $sales = [];
         foreach ($rows as $row) {
@@ -430,11 +473,18 @@ final class StockMonitorService
      */
     private function fetchProductLastMovement(): array
     {
-        $stmt = $this->pdo->query(
-            'SELECT product_id, MAX(created_at) AS last_movement
-             FROM product_stock_movements
-             GROUP BY product_id'
-        );
+        try {
+            $stmt = $this->pdo->query(
+                'SELECT product_id, MAX(created_at) AS last_movement
+                 FROM product_stock_movements
+                 GROUP BY product_id'
+            );
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
         $rows = $stmt !== false ? $stmt->fetchAll() : [];
 
         $map = [];
@@ -468,7 +518,14 @@ final class StockMonitorService
      */
     private function fetchOpenProductAlertsIndexed(): array
     {
-        $stmt = $this->pdo->query('SELECT * FROM product_stock_alerts WHERE status = "Open"');
+        try {
+            $stmt = $this->pdo->query('SELECT * FROM product_stock_alerts WHERE status = "Open"');
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return [];
+            }
+            throw $exception;
+        }
         $rows = $stmt !== false ? $stmt->fetchAll() : [];
         $indexed = [];
         foreach ($rows as $row) {
@@ -501,7 +558,18 @@ final class StockMonitorService
             ':message' => $message,
         ]);
 
-        $this->notify($info['provider_name'] ?? ('Provider #' . $providerId), $message);
+        $this->notify(
+            $info['provider_name'] ?? ('Provider #' . $providerId),
+            $message,
+            [
+                'provider_id' => $providerId,
+                'current_stock' => (int) ($info['current_stock'] ?? 0),
+                'threshold' => (int) ($info['threshold'] ?? 0),
+                'average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+                'days_cover' => $info['days_cover'] ?? null,
+            ],
+            'stock'
+        );
     }
 
     /**
@@ -545,26 +613,44 @@ final class StockMonitorService
      */
     private function createProductAlert(int $productId, array $info, string $message): void
     {
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO product_stock_alerts (
-                 product_id, current_stock, stock_reserved, threshold, average_daily_sales,
-                 days_cover, last_movement, message
-             ) VALUES (:product_id, :current_stock, :stock_reserved, :threshold, :average_daily_sales,
-                 :days_cover, :last_movement, :message)'
-        );
-        $stmt->execute([
-            ':product_id' => $productId,
-            ':current_stock' => (int) ($info['current_stock'] ?? 0),
-            ':stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
-            ':threshold' => (int) ($info['threshold'] ?? 0),
-            ':average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
-            ':days_cover' => $info['days_cover'] ?? null,
-            ':last_movement' => $info['last_movement'] ?? null,
-            ':message' => $message,
-        ]);
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO product_stock_alerts (
+                     product_id, current_stock, stock_reserved, threshold, average_daily_sales,
+                     days_cover, last_movement, message
+                 ) VALUES (:product_id, :current_stock, :stock_reserved, :threshold, :average_daily_sales,
+                     :days_cover, :last_movement, :message)'
+            );
+            $stmt->execute([
+                ':product_id' => $productId,
+                ':current_stock' => (int) ($info['current_stock'] ?? 0),
+                ':stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
+                ':threshold' => (int) ($info['threshold'] ?? 0),
+                ':average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+                ':days_cover' => $info['days_cover'] ?? null,
+                ':last_movement' => $info['last_movement'] ?? null,
+                ':message' => $message,
+            ]);
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return;
+            }
+            throw $exception;
+        }
 
         $productName = (string) ($info['product_name'] ?? ('Prodotto #' . $productId));
-        $this->notify('Prodotto ' . $productName, $message);
+        $this->notify(
+            'Prodotto ' . $productName,
+            $message,
+            [
+                'product_id' => $productId,
+                'available' => (int) ($info['current_stock'] ?? 0),
+                'threshold' => (int) ($info['threshold'] ?? 0),
+                'average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+                'days_cover' => $info['days_cover'] ?? null,
+            ],
+            'product_stock'
+        );
     }
 
     /**
@@ -572,37 +658,62 @@ final class StockMonitorService
      */
     private function updateProductAlert(int $alertId, array $info, string $message): void
     {
-        $stmt = $this->pdo->prepare(
-            'UPDATE product_stock_alerts
-             SET current_stock = :current_stock,
-                 stock_reserved = :stock_reserved,
-                 threshold = :threshold,
-                 average_daily_sales = :average_daily_sales,
-                 days_cover = :days_cover,
-                 last_movement = :last_movement,
-                 message = :message
-             WHERE id = :id'
-        );
-        $stmt->execute([
-            ':current_stock' => (int) ($info['current_stock'] ?? 0),
-            ':stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
-            ':threshold' => (int) ($info['threshold'] ?? 0),
-            ':average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
-            ':days_cover' => $info['days_cover'] ?? null,
-            ':last_movement' => $info['last_movement'] ?? null,
-            ':message' => $message,
-            ':id' => $alertId,
-        ]);
+        try {
+            $stmt = $this->pdo->prepare(
+                'UPDATE product_stock_alerts
+                 SET current_stock = :current_stock,
+                     stock_reserved = :stock_reserved,
+                     threshold = :threshold,
+                     average_daily_sales = :average_daily_sales,
+                     days_cover = :days_cover,
+                     last_movement = :last_movement,
+                     message = :message
+                 WHERE id = :id'
+            );
+            $stmt->execute([
+                ':current_stock' => (int) ($info['current_stock'] ?? 0),
+                ':stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
+                ':threshold' => (int) ($info['threshold'] ?? 0),
+                ':average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+                ':days_cover' => $info['days_cover'] ?? null,
+                ':last_movement' => $info['last_movement'] ?? null,
+                ':message' => $message,
+                ':id' => $alertId,
+            ]);
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return;
+            }
+            throw $exception;
+        }
     }
 
     private function resolveProductAlert(int $alertId): void
     {
-        $stmt = $this->pdo->prepare(
-            "UPDATE product_stock_alerts
-             SET status = 'Resolved', resolved_at = NOW()
-             WHERE id = :id"
-        );
-        $stmt->execute([':id' => $alertId]);
+        try {
+            $stmt = $this->pdo->prepare(
+                "UPDATE product_stock_alerts
+                 SET status = 'Resolved', resolved_at = NOW()
+                 WHERE id = :id"
+            );
+            $stmt->execute([':id' => $alertId]);
+        } catch (\PDOException $exception) {
+            if ($this->isSchemaNotReady($exception)) {
+                return;
+            }
+            throw $exception;
+        }
+    }
+
+    private function isSchemaNotReady(\PDOException $exception): bool
+    {
+        $errorCode = (int) $exception->getCode();
+        $errorInfo = $exception->errorInfo ?? null;
+        if (is_array($errorInfo) && isset($errorInfo[1])) {
+            $errorCode = (int) $errorInfo[1];
+        }
+
+        return in_array($errorCode, [1054, 1091, 1146], true);
     }
 
     /**
@@ -680,9 +791,9 @@ final class StockMonitorService
         return $suggested > 0 ? $suggested : 0;
     }
 
-    private function notify(string $providerName, string $message): void
+    private function notify(string $label, string $message, array $context = [], string $channel = 'stock'): void
     {
-        $subject = '[Coresuite] Alert stock ' . $providerName;
+        $subject = '[Coresuite] Alert stock ' . $label;
 
         $delivery = 'none';
         if ($this->alertEmail !== null) {
@@ -696,6 +807,30 @@ final class StockMonitorService
         if ($this->logFile !== null) {
             $suffix = $delivery === 'none' ? ' [notifica non inviata]' : ' [notifica ' . $delivery . ']';
             $this->appendLog($subject . ' - ' . $message . $suffix);
+        }
+
+        if ($this->notificationService !== null) {
+            $meta = array_merge($context, [
+                'label' => $label,
+                'delivery' => $delivery,
+            ]);
+
+            $link = $channel === 'product_stock'
+                ? 'index.php?page=products_list'
+                : 'index.php?page=sim_stock';
+
+            $this->notificationService->push(
+                'stock_alert',
+                $subject,
+                $message,
+                [
+                    'level' => $delivery === 'none' ? 'warning' : 'success',
+                    'channel' => $channel,
+                    'source' => 'stock_monitor_service',
+                    'link' => $link,
+                    'meta' => $meta,
+                ]
+            );
         }
     }
 
