@@ -25,7 +25,7 @@ SET @customer_id_column := (
 SET @ddl := IF(
     @customer_id_column = 0,
     'ALTER TABLE sales ADD COLUMN customer_id INT NULL AFTER user_id',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
@@ -41,7 +41,7 @@ SET @fk_exists := (
 SET @ddl := IF(
     @fk_exists = 0,
     'ALTER TABLE sales ADD CONSTRAINT fk_sales_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
@@ -55,7 +55,7 @@ SET @customer_note_column := (
 SET @ddl := IF(
     @customer_note_column = 0,
     'ALTER TABLE sales ADD COLUMN customer_note VARCHAR(200) NULL AFTER customer_name',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;

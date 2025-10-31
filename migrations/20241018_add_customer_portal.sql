@@ -1,63 +1,11 @@
 -- 20241018_add_customer_portal.sql
 -- Estende la tabella vendite con stato pagamenti e introduce il portale clienti.
 
-SET @dbname := DATABASE();
-
-SET @total_paid_column := (
-    SELECT COUNT(*)
-    FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'sales' AND COLUMN_NAME = 'total_paid'
-);
-SET @ddl := IF(
-    @total_paid_column = 0,
-    'ALTER TABLE sales ADD COLUMN total_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER total',
-    'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
-SET @balance_due_column := (
-    SELECT COUNT(*)
-    FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'sales' AND COLUMN_NAME = 'balance_due'
-);
-SET @ddl := IF(
-    @balance_due_column = 0,
-    'ALTER TABLE sales ADD COLUMN balance_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER total_paid',
-    'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
-SET @payment_status_column := (
-    SELECT COUNT(*)
-    FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'sales' AND COLUMN_NAME = 'payment_status'
-);
-SET @ddl := IF(
-    @payment_status_column = 0,
-    "ALTER TABLE sales ADD COLUMN payment_status ENUM('Paid','Partial','Pending','Overdue') NOT NULL DEFAULT 'Paid' AFTER balance_due",
-    'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
-SET @due_date_column := (
-    SELECT COUNT(*)
-    FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = 'sales' AND COLUMN_NAME = 'due_date'
-);
-SET @ddl := IF(
-    @due_date_column = 0,
-    'ALTER TABLE sales ADD COLUMN due_date DATE NULL AFTER payment_status',
-    'SELECT 1'
-);
-PREPARE stmt FROM @ddl;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+ALTER TABLE sales
+  ADD COLUMN IF NOT EXISTS total_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER total,
+  ADD COLUMN IF NOT EXISTS balance_due DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER total_paid,
+  ADD COLUMN IF NOT EXISTS payment_status ENUM('Paid','Partial','Pending','Overdue') NOT NULL DEFAULT 'Paid' AFTER balance_due,
+  ADD COLUMN IF NOT EXISTS due_date DATE NULL AFTER payment_status;
 
 CREATE TABLE IF NOT EXISTS customer_portal_accounts (
   id INT AUTO_INCREMENT PRIMARY KEY,

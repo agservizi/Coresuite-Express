@@ -24,7 +24,7 @@ SET @column_exists := (
 SET @ddl := IF(
     @column_exists = 0,
     'ALTER TABLE sales ADD COLUMN discount DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER vat',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
@@ -38,7 +38,7 @@ SET @column_exists := (
 SET @ddl := IF(
     @column_exists = 0,
     'ALTER TABLE sales ADD COLUMN discount_campaign_id INT NULL AFTER discount',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
@@ -52,7 +52,7 @@ SET @constraint_exists := (
 SET @ddl := IF(
     @constraint_exists = 0,
     'ALTER TABLE sales ADD CONSTRAINT fk_sales_discount_campaign FOREIGN KEY (discount_campaign_id) REFERENCES discount_campaigns(id) ON DELETE SET NULL',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;

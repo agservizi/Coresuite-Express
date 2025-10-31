@@ -12,7 +12,7 @@ SET @stock_column := (
 SET @ddl := IF(
     @stock_column = 0,
     'ALTER TABLE products ADD COLUMN stock_quantity INT NOT NULL DEFAULT 0 AFTER price',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
@@ -25,7 +25,7 @@ SET @reserved_column := (
 SET @ddl := IF(
     @reserved_column = 0,
     'ALTER TABLE products ADD COLUMN stock_reserved INT NOT NULL DEFAULT 0 AFTER stock_quantity',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;
@@ -38,7 +38,7 @@ SET @threshold_column := (
 SET @ddl := IF(
     @threshold_column = 0,
     'ALTER TABLE products ADD COLUMN reorder_threshold INT NOT NULL DEFAULT 0 AFTER stock_reserved',
-    'SELECT 1'
+    'DO 0'
 );
 PREPARE stmt FROM @ddl;
 EXECUTE stmt;

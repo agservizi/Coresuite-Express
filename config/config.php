@@ -117,4 +117,8 @@ $configCache = [
     ],
 ];
 
+if (defined('PDO::MYSQL_ATTR_USE_BUFFERED_QUERY')) {
+    $configCache['db']['options'][PDO::MYSQL_ATTR_USE_BUFFERED_QUERY] = true;
+}
+
 return $configCache;
