@@ -67,6 +67,26 @@ $configuredVatRate = isset($GLOBALS['config']['app']['tax_rate'])
 $displayVatRate = $configuredVatRate > 0.0001 ? $vatRate : 0.0;
 $taxNote = $GLOBALS['config']['app']['tax_note'] ?? null;
 $vatAmount = isset($sale['vat_amount']) ? max((float) $sale['vat_amount'], 0.0) : 0.0;
+$vatSummary = [];
+if (!empty($sale['items']) && is_array($sale['items'])) {
+  foreach ($sale['items'] as $lineItem) {
+    if (!is_array($lineItem)) {
+      continue;
+    }
+    $code = isset($lineItem['vat_code']) ? trim((string) $lineItem['vat_code']) : '';
+    if ($code === '') {
+      continue;
+    }
+    $rate = isset($lineItem['tax_rate']) ? (float) $lineItem['tax_rate'] : null;
+    $key = $code . '|' . ($rate !== null ? number_format($rate, 4, '.', '') : '');
+    if (!isset($vatSummary[$key])) {
+      $vatSummary[$key] = [
+        'code' => $code,
+        'rate' => $rate,
+      ];
+    }
+  }
+}
 ?><!doctype html>
 <html lang="it">
 <head>
@@ -301,6 +321,13 @@ $vatAmount = isset($sale['vat_amount']) ? max((float) $sale['vat_amount'], 0.0) 
           <?php if (($item['quantity'] ?? 1) > 1): ?>
             <span class="muted">x<?= (int) $item['quantity'] ?></span>
           <?php endif; ?>
+          <?php
+              $itemVatCode = isset($item['vat_code']) ? trim((string) $item['vat_code']) : '';
+              if ($itemVatCode !== ''):
+                  $itemVatRate = isset($item['tax_rate']) ? (float) $item['tax_rate'] : 0.0;
+          ?>
+              <div class="muted">IVA <?= number_format($itemVatRate, 2, ',', '.') ?>% · Cod. <?= htmlspecialchars($itemVatCode) ?></div>
+          <?php endif; ?>
         </td>
         <td style="text-align:right;">€ <?= number_format((float) $item['price'], 2, ',', '.') ?></td>
       </tr>
@@ -314,6 +341,20 @@ $vatAmount = isset($sale['vat_amount']) ? max((float) $sale['vat_amount'], 0.0) 
   <?php endif; ?>
   <?php if ($vatAmount > 0.001): ?>
     <div class="muted">IVA compresa: € <?= number_format($vatAmount, 2, ',', '.') ?></div>
+  <?php endif; ?>
+  <?php if ($vatSummary !== []): ?>
+    <?php
+        $vatLabels = [];
+        foreach ($vatSummary as $entry) {
+            $parts = [];
+            if ($entry['rate'] !== null) {
+                $parts[] = number_format((float) $entry['rate'], 2, ',', '.') . '%';
+            }
+            $parts[] = 'Cod. ' . $entry['code'];
+            $vatLabels[] = htmlspecialchars(implode(' • ', $parts));
+        }
+    ?>
+    <div class="muted">Codici IVA applicati: <?= implode(' | ', $vatLabels) ?></div>
   <?php endif; ?>
   <?php if ((float) $sale['discount'] > 0): ?>
     <div class="muted">Sconto: € <?= number_format((float) $sale['discount'], 2, ',', '.') ?></div>

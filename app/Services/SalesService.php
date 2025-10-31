@@ -187,7 +187,7 @@ final class SalesService
             if ($uniqueProductIds !== []) {
                 $placeholders = implode(',', array_fill(0, count($uniqueProductIds), '?'));
                 $stmtProducts = $this->pdo->prepare(
-                    'SELECT id, name, tax_rate, stock_quantity
+                    'SELECT id, name, tax_rate, stock_quantity, vat_code
                      FROM products
                      WHERE id IN (' . $placeholders . ')
                      FOR UPDATE'
@@ -198,6 +198,7 @@ final class SalesService
                         'name' => (string) ($row['name'] ?? ''),
                         'tax_rate' => (float) ($row['tax_rate'] ?? 0.0),
                         'stock_quantity' => (int) ($row['stock_quantity'] ?? 0),
+                        'vat_code' => isset($row['vat_code']) && $row['vat_code'] !== '' ? (string) $row['vat_code'] : null,
                     ];
                 }
             }
@@ -259,6 +260,7 @@ final class SalesService
                     'tax_rate' => $taxRate,
                     'tax_amount' => $taxAmount,
                     'fallback_description' => $fallbackDescription,
+                    'vat_code' => $productMap[$productId]['vat_code'] ?? null,
                 ];
             }
 
@@ -340,8 +342,8 @@ final class SalesService
             $saleId = (int) $this->pdo->lastInsertId();
 
             $stmtItem = $this->pdo->prepare(
-                'INSERT INTO sale_items (sale_id, iccid_id, product_id, description, quantity, price, tax_rate, tax_amount)
-                 VALUES (:s, :iccid, :product, :desc, :qty, :price, :tax_rate, :tax_amount)'
+                'INSERT INTO sale_items (sale_id, iccid_id, product_id, description, quantity, price, tax_rate, tax_amount, vat_code)
+                 VALUES (:s, :iccid, :product, :desc, :qty, :price, :tax_rate, :tax_amount, :vat_code)'
             );
             $stmtUpdateICCID = $this->pdo->prepare(
                 "UPDATE iccid_stock
@@ -366,7 +368,7 @@ final class SalesService
                     }
                 }
 
-                $detail = $itemTaxDetails[$index] ?? ['tax_rate' => 0.0, 'tax_amount' => 0.0, 'fallback_description' => null];
+                $detail = $itemTaxDetails[$index] ?? ['tax_rate' => 0.0, 'tax_amount' => 0.0, 'fallback_description' => null, 'vat_code' => null];
                 $description = $item['description'] ?? null;
                 if (($description === null || $description === '') && !empty($detail['fallback_description'])) {
                     $description = $detail['fallback_description'];
@@ -394,6 +396,7 @@ final class SalesService
                     ':price' => (float) $item['price'],
                     ':tax_rate' => (float) ($detail['tax_rate'] ?? 0.0),
                     ':tax_amount' => (float) ($detail['tax_amount'] ?? 0.0),
+                    ':vat_code' => isset($detail['vat_code']) && $detail['vat_code'] !== '' ? (string) $detail['vat_code'] : null,
                 ]);
 
                 if ($iccidId !== null) {

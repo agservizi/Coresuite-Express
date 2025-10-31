@@ -67,6 +67,13 @@ logs/              # spazio per log applicativi
 - I controller sono pensati per essere semplici shim fra viste e servizi.
 - `iccid_example.csv` offre un template pronto per importare gli ICCID.
 
+## Gestione discrepanze checksum migrazioni
+- Se `php scripts/install.php --upgrade` si blocca per un checksum differente, prima verifica quale valore è registrato in `schema_migrations`.
+- Usa `php scripts/show_checksum.php <nome_file.sql>` per confrontare checksum salvato nel database e hash del file presente in `migrations/`.
+- Se i contenuti coincidono ma il checksum differisce solo per maiuscole/minuscole, normalizza il valore eseguendo: `UPDATE schema_migrations SET checksum = LOWER(checksum) WHERE filename = '<nome_file.sql>';` dalla console MySQL.
+- Se il file è stato davvero modificato, ripristina la versione originale (da backup o VCS) oppure aggiorna intenzionalmente il file e poi esegui `UPDATE schema_migrations SET checksum = '<nuovo_hash>';` con l'hash generato da `show_checksum.php`.
+- Dopo l'allineamento, rilancia `php scripts/install.php --upgrade` per applicare le migrazioni pendenti.
+
 ## Possibili miglioramenti
 1. **Migrazioni automatizzate:** integrare strumenti come Phinx o Laravel Schema.
 2. **ORM / Query Builder:** Doctrine, Eloquent o Atlas per ridurre SQL manuale.

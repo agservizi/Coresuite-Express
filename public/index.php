@@ -833,6 +833,8 @@ switch ($page) {
             unset($_SESSION['settings_operator_form']);
         }
 
+        $fiscalOpen = isset($_GET['fiscal_open']);
+
         if ($method === 'POST') {
             $action = $_POST['action'] ?? '';
             $redirectParams = [];
@@ -904,6 +906,22 @@ switch ($page) {
                     unset($_SESSION['settings_operator_form']);
                 }
                 $redirectParams['operators_open'] = 1;
+            } elseif ($action === 'update_product_tax') {
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono aggiornare le impostazioni fiscali.',
+                    ];
+                } else {
+                    $productId = isset($_POST['product_id']) ? (int) $_POST['product_id'] : 0;
+                    $taxRateInput = isset($_POST['product_tax_rate']) ? (float) $_POST['product_tax_rate'] : 0.0;
+                    $vatCodeInput = array_key_exists('product_vat_code', $_POST)
+                        ? (string) $_POST['product_vat_code']
+                        : null;
+                    $result = $productService->updateTaxSettings($productId, $taxRateInput, $vatCodeInput);
+                }
+                $redirectParams['fiscal_open'] = 1;
             } elseif ($action === 'create_discount_campaign') {
                 if (!$isAdmin) {
                     $result = [
@@ -992,6 +1010,8 @@ switch ($page) {
             'operatorEdit' => $operatorEdit,
             'operatorEditForm' => $operatorEditForm,
             'operatorsOpen' => $operatorsOpenOverride,
+            'fiscalProducts' => $productService->listForFiscalSettings(),
+            'fiscalOpen' => $fiscalOpen,
             'discountCampaigns' => $discountCampaignService->listAll(),
             'isAdmin' => $isAdmin,
             'auditLogs' => $auditLogsResult['rows'],

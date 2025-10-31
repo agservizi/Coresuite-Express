@@ -7,6 +7,7 @@ declare(strict_types=1);
  * @var array<int, array<string, mixed>> $roles
  * @var array<int, array<string, mixed>> $operators
  * @var array<int, array<string, mixed>> $discountCampaigns
+ * @var array<int, array<string, mixed>> $fiscalProducts
  * @var array<int, array<string, mixed>> $auditLogs
  * @var array{page:int, per_page:int, total:int, pages:int, has_prev:bool, has_next:bool} $auditPagination
  * @var callable $buildAuditPageUrl
@@ -16,11 +17,13 @@ declare(strict_types=1);
  * @var array<string, mixed>|null $operatorEdit
  * @var array<string, mixed>|null $operatorEditForm
  * @var bool|null $operatorsOpen
+ * @var bool $fiscalOpen
  */
 $pageTitle = $pageTitle ?? 'Impostazioni';
 $roles = $roles ?? [];
 $operators = $operators ?? [];
 $discountCampaigns = $discountCampaigns ?? [];
+$fiscalProducts = $fiscalProducts ?? [];
 $isAdmin = $isAdmin ?? false;
 $operatorEdit = $operatorEdit ?? null;
 $operatorEditForm = isset($operatorEditForm) && is_array($operatorEditForm) ? $operatorEditForm : null;
@@ -42,6 +45,27 @@ $alertsOpen = !empty($stockAlerts);
 $operatorsOpen = is_bool($operatorsOpenProp)
     ? $operatorsOpenProp
     : ($isAdmin && $feedback !== null && ($feedback['success'] ?? false) === false && ! $inventoryOpen);
+$fiscalOpen = isset($fiscalOpen) ? (bool) $fiscalOpen : false;
+if (!$fiscalOpen && $feedback !== null) {
+    $messagesToInspect = [];
+    if (isset($feedback['message'])) {
+        $messagesToInspect[] = (string) $feedback['message'];
+    }
+    if (!empty($feedback['error'])) {
+        $messagesToInspect[] = (string) $feedback['error'];
+    }
+    if (!empty($feedback['errors']) && is_array($feedback['errors'])) {
+        foreach ($feedback['errors'] as $errorText) {
+            $messagesToInspect[] = (string) $errorText;
+        }
+    }
+    foreach ($messagesToInspect as $messagePart) {
+        if (stripos($messagePart, 'iva') !== false || stripos($messagePart, 'fisc') !== false) {
+            $fiscalOpen = true;
+            break;
+        }
+    }
+}
 $campaignsOpen = $feedback !== null && isset($feedback['message']) && strpos((string) $feedback['message'], 'Campagna') !== false;
 $auditCurrentPage = max(1, (int) ($auditPagination['page'] ?? 1));
 $totalAuditPages = max(1, (int) ($auditPagination['pages'] ?? 1));
@@ -134,6 +158,98 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </article>
+
+        <article class="settings-accordion__item" data-accordion data-open="<?= $fiscalOpen ? 'true' : 'false' ?>">
+            <button type="button" class="settings-accordion__toggle" data-accordion-toggle aria-expanded="<?= $fiscalOpen ? 'true' : 'false' ?>">
+                <span class="settings-accordion__title">Impostazioni fiscali</span>
+                <span class="settings-accordion__icon" aria-hidden="true"></span>
+            </button>
+            <div class="settings-accordion__content" data-accordion-content <?= $fiscalOpen ? '' : 'hidden' ?>>
+                <?php if (!$isAdmin): ?>
+                    <p class="muted">Solo gli amministratori possono gestire le impostazioni fiscali dei prodotti.</p>
+                <?php else: ?>
+                    <p class="muted">Imposta aliquota e codice IVA per ciascun prodotto: i valori vengono riportati automaticamente nello scontrino.</p>
+                    <?php if (empty($fiscalProducts)): ?>
+                        <p class="muted">Nessun prodotto a catalogo. Aggiungi articoli dalla sezione Prodotti.</p>
+                    <?php else: ?>
+                        <div class="table-wrapper table-wrapper--embedded">
+                            <table class="table table--compact">
+                                <thead>
+                                    <tr>
+                                        <th>Prodotto</th>
+                                        <th>Aliquota IVA (%)</th>
+                                        <th>Codice IVA</th>
+                                        <th>Stato</th>
+                                        <th class="table__col--actions">Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($fiscalProducts as $product): ?>
+                                        <?php
+                                            $productId = (int) ($product['id'] ?? 0);
+                                            $productName = trim((string) ($product['name'] ?? ''));
+                                            $productSku = trim((string) ($product['sku'] ?? ''));
+                                            $taxRateValue = number_format((float) ($product['tax_rate'] ?? 0.0), 2, '.', '');
+                                            $vatCodeValue = isset($product['vat_code']) ? trim((string) $product['vat_code']) : '';
+                                            $isActiveProduct = (int) ($product['is_active'] ?? 0) === 1;
+                                            $formId = 'fiscal-form-' . $productId;
+                                        ?>
+                                        <tr>
+                                            <td>
+                                                <strong><?= htmlspecialchars($productName !== '' ? $productName : 'Prodotto #' . $productId) ?></strong>
+                                                <?php if ($productSku !== ''): ?>
+                                                    <div class="muted">SKU <?= htmlspecialchars($productSku) ?></div>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <div class="table-field table-field--compact">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        max="100"
+                                                        name="product_tax_rate"
+                                                        value="<?= htmlspecialchars($taxRateValue) ?>"
+                                                        class="table-field__input table-field__input--number"
+                                                        required
+                                                        form="<?= htmlspecialchars($formId) ?>"
+                                                    >
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="table-field table-field--compact">
+                                                    <input
+                                                        type="text"
+                                                        name="product_vat_code"
+                                                        value="<?= htmlspecialchars($vatCodeValue) ?>"
+                                                        maxlength="32"
+                                                        class="table-field__input"
+                                                        placeholder="Es. A22"
+                                                        form="<?= htmlspecialchars($formId) ?>"
+                                                    >
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge <?= $isActiveProduct ? 'badge--success' : 'badge--muted' ?>">
+                                                    <?= $isActiveProduct ? 'Attivo' : 'Disattivato' ?>
+                                                </span>
+                                            </td>
+                                            <td class="table__col--actions">
+                                                <form method="post" class="inline-form" id="<?= htmlspecialchars($formId) ?>">
+                                                    <input type="hidden" name="action" value="update_product_tax">
+                                                    <input type="hidden" name="product_id" value="<?= $productId ?>">
+                                                    <button type="submit" class="btn btn--secondary btn--small">Salva</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                <?php endif; ?>
             </div>
         </article>
 

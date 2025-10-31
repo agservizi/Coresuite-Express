@@ -18,7 +18,7 @@ final class ProductService
     public function listAll(): array
     {
         $stmt = $this->pdo->query(
-            'SELECT id, name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, notes, is_active, created_at, updated_at
+            'SELECT id, name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, vat_code, notes, is_active, created_at, updated_at
              FROM products
              ORDER BY created_at DESC'
         );
@@ -41,7 +41,7 @@ final class ProductService
         $offset = ($page - 1) * $perPage;
 
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, notes, is_active, created_at, updated_at
+            'SELECT id, name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, vat_code, notes, is_active, created_at, updated_at
              FROM products
              ORDER BY created_at DESC
              LIMIT :limit OFFSET :offset'
@@ -70,7 +70,7 @@ final class ProductService
     public function listActive(): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, sku, imei, category, price, stock_quantity, tax_rate
+            'SELECT id, name, sku, imei, category, price, stock_quantity, tax_rate, vat_code
              FROM products
              WHERE is_active = 1
              ORDER BY name ASC'
@@ -79,10 +79,24 @@ final class ProductService
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listForFiscalSettings(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT id, name, sku, tax_rate, vat_code, is_active
+             FROM products
+             ORDER BY is_active DESC, name ASC'
+        );
+
+        return $stmt !== false ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    }
+
     public function findById(int $id): ?array
     {
-        $stmt = $this->pdo->prepare(
-          'SELECT id, name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, is_active
+                $stmt = $this->pdo->prepare(
+                    'SELECT id, name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, vat_code, is_active
              FROM products
              WHERE id = :id'
         );
@@ -104,9 +118,14 @@ final class ProductService
         $notes = isset($input['notes']) ? trim((string) $input['notes']) : null;
         $price = isset($input['price']) ? (float) $input['price'] : 0.0;
         $taxRate = isset($input['tax_rate']) ? (float) $input['tax_rate'] : 22.0;
+        $vatCode = array_key_exists('vat_code', $input) ? trim((string) $input['vat_code']) : null;
         $isActive = isset($input['is_active']) ? ((int) $input['is_active'] === 1 ? 1 : 0) : 1;
         $stockQuantity = isset($input['stock_quantity']) ? (int) $input['stock_quantity'] : 0;
         $reorderThreshold = isset($input['reorder_threshold']) ? (int) $input['reorder_threshold'] : 0;
+
+        if ($vatCode !== null) {
+            $vatCode = $vatCode !== '' ? strtoupper($vatCode) : null;
+        }
 
         $errors = [];
         if ($name === '') {
@@ -123,6 +142,12 @@ final class ProductService
         }
         if ($reorderThreshold < 0) {
             $errors[] = 'La soglia di riordino deve essere positiva o zero.';
+        }
+        if ($vatCode !== null) {
+            $length = function_exists('mb_strlen') ? mb_strlen($vatCode) : strlen($vatCode);
+            if ($length > 32) {
+                $errors[] = 'Il codice IVA può contenere al massimo 32 caratteri.';
+            }
         }
 
         if ($errors !== []) {
@@ -161,8 +186,8 @@ final class ProductService
             $this->pdo->beginTransaction();
 
             $stmt = $this->pdo->prepare(
-                'INSERT INTO products (name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, notes, is_active)
-                 VALUES (:name, :sku, :imei, :category, :price, :stock_quantity, 0, :reorder_threshold, :tax_rate, :notes, :is_active)'
+                'INSERT INTO products (name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, vat_code, notes, is_active)
+                 VALUES (:name, :sku, :imei, :category, :price, :stock_quantity, 0, :reorder_threshold, :tax_rate, :vat_code, :notes, :is_active)'
             );
             $stmt->execute([
                 ':name' => $name,
@@ -173,6 +198,7 @@ final class ProductService
                 ':stock_quantity' => $stockQuantity,
                 ':reorder_threshold' => $reorderThreshold,
                 ':tax_rate' => $taxRate,
+                ':vat_code' => $vatCode,
                 ':notes' => $notes !== null && $notes !== '' ? $notes : null,
                 ':is_active' => $isActive,
             ]);
@@ -234,6 +260,13 @@ final class ProductService
         $isActive = isset($input['is_active']) ? ((int) $input['is_active'] === 1 ? 1 : 0) : 0;
         $stockQuantity = isset($input['stock_quantity']) ? (int) $input['stock_quantity'] : (int) ($existing['stock_quantity'] ?? 0);
         $reorderThreshold = isset($input['reorder_threshold']) ? (int) $input['reorder_threshold'] : (int) ($existing['reorder_threshold'] ?? 0);
+        $vatCode = array_key_exists('vat_code', $input)
+            ? trim((string) $input['vat_code'])
+            : (isset($existing['vat_code']) ? (string) $existing['vat_code'] : null);
+
+        if ($vatCode !== null) {
+            $vatCode = $vatCode !== '' ? strtoupper($vatCode) : null;
+        }
 
         $errors = [];
         if ($name === '') {
@@ -250,6 +283,12 @@ final class ProductService
         }
         if ($reorderThreshold < 0) {
             $errors[] = 'La soglia di riordino deve essere positiva o zero.';
+        }
+        if ($vatCode !== null) {
+            $length = function_exists('mb_strlen') ? mb_strlen($vatCode) : strlen($vatCode);
+            if ($length > 32) {
+                $errors[] = 'Il codice IVA può contenere al massimo 32 caratteri.';
+            }
         }
 
         if ($errors !== []) {
@@ -299,6 +338,7 @@ final class ProductService
                      price = :price,
                      stock_quantity = :stock_quantity,
                      tax_rate = :tax_rate,
+                         vat_code = :vat_code,
                      reorder_threshold = :reorder_threshold,
                      notes = :notes,
                      is_active = :is_active
@@ -312,6 +352,7 @@ final class ProductService
                 ':price' => $price,
                 ':stock_quantity' => $stockQuantity,
                 ':tax_rate' => $taxRate,
+                ':vat_code' => $vatCode,
                 ':reorder_threshold' => $reorderThreshold,
                 ':notes' => $notes !== null && $notes !== '' ? $notes : null,
                 ':is_active' => $isActive,
@@ -346,6 +387,65 @@ final class ProductService
         return [
             'success' => true,
             'message' => 'Prodotto aggiornato correttamente.',
+        ];
+    }
+
+    /**
+     * @return array{success:bool, message:string, errors?:array<int, string>}
+     */
+    public function updateTaxSettings(int $productId, float $taxRate, ?string $vatCode): array
+    {
+        $productId = max(1, $productId);
+        $existing = $this->findById($productId);
+        if ($existing === null) {
+            return [
+                'success' => false,
+                'message' => 'Prodotto non trovato.',
+                'errors' => ['Seleziona un prodotto valido.'],
+            ];
+        }
+
+        if ($taxRate < 0 || $taxRate > 100) {
+            return [
+                'success' => false,
+                'message' => 'Aliquota non valida.',
+                'errors' => ['L\'aliquota IVA deve essere compresa tra 0 e 100.'],
+            ];
+        }
+
+        $normalizedCode = $vatCode !== null ? trim($vatCode) : null;
+        if ($normalizedCode === '') {
+            $normalizedCode = null;
+        }
+        if ($normalizedCode !== null) {
+            $normalizedCode = strtoupper($normalizedCode);
+            $length = function_exists('mb_strlen') ? mb_strlen($normalizedCode) : strlen($normalizedCode);
+            if ($length > 32) {
+                return [
+                    'success' => false,
+                    'message' => 'Codice IVA troppo lungo.',
+                    'errors' => ['Il codice IVA può contenere al massimo 32 caratteri.'],
+                ];
+            }
+        }
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE products
+             SET tax_rate = :tax_rate,
+                 vat_code = :vat_code
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            ':tax_rate' => $taxRate,
+            ':vat_code' => $normalizedCode,
+            ':id' => $productId,
+        ]);
+
+        $updated = $stmt->rowCount() > 0;
+
+        return [
+            'success' => true,
+            'message' => $updated ? 'Impostazioni fiscali aggiornate.' : 'Nessuna modifica necessaria.',
         ];
     }
 
