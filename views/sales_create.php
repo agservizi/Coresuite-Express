@@ -442,17 +442,27 @@ $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
 
 <?php if ($pendingReceiptId > 0): ?>
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    (function() {
         const receiptUrl = 'print_receipt.php?sale_id=<?= $pendingReceiptId ?>';
-        window.dispatchEvent(new CustomEvent('app:openReceipt', { detail: { url: receiptUrl } }));
-        try {
-            const cleaned = new URL(window.location.href);
-            cleaned.searchParams.delete('print');
-            window.history.replaceState({}, document.title, cleaned);
-        } catch (error) {
-            console.error('Impossibile aggiornare l\'URL', error);
+        const triggerModal = () => {
+            window.dispatchEvent(new CustomEvent('app:openReceipt', { detail: { url: receiptUrl } }));
+            try {
+                const cleaned = new URL(window.location.href);
+                cleaned.searchParams.delete('print');
+                window.history.replaceState({}, document.title, cleaned);
+            } catch (error) {
+                console.error('Impossibile aggiornare l\'URL', error);
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                window.setTimeout(triggerModal, 40);
+            }, { once: true });
+        } else {
+            window.setTimeout(triggerModal, 0);
         }
-    });
+    })();
 </script>
 <?php endif; ?>
 
