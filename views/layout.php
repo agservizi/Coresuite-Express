@@ -260,6 +260,19 @@ if ($notificationsPayload === false) {
 }
 ?>
 <div class="toast-stack" data-toast-stack aria-live="polite" aria-atomic="true"></div>
+<div class="modal" data-receipt-modal aria-hidden="true">
+    <div class="modal__backdrop" data-receipt-dismiss></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-label="Anteprima scontrino">
+        <button type="button" class="modal__close" data-receipt-dismiss aria-label="Chiudi anteprima">×</button>
+        <div class="modal__content">
+            <div class="modal__loader" data-receipt-loader>
+                <span class="modal__loader-spinner" aria-hidden="true"></span>
+                <span class="modal__loader-label">Caricamento anteprima…</span>
+            </div>
+            <iframe data-receipt-frame title="Anteprima scontrino" sandbox="allow-same-origin allow-scripts allow-downloads"></iframe>
+        </div>
+    </div>
+</div>
 <script>
     window.AppInitialToasts = <?= $initialToastsPayload ?>;
     window.AppNotifications = <?= $notificationsPayload ?>;

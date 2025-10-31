@@ -664,6 +664,130 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  const receiptModal = document.querySelector('[data-receipt-modal]');
+  if (receiptModal instanceof HTMLElement) {
+    const receiptFrame = receiptModal.querySelector('[data-receipt-frame]');
+    const receiptLoader = receiptModal.querySelector('[data-receipt-loader]');
+    const dismissControls = receiptModal.querySelectorAll('[data-receipt-dismiss]');
+    let restoreFocusElement = null;
+    let previousBodyOverflow = '';
+
+    const setOpenState = open => {
+      receiptModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) {
+        receiptModal.dataset.open = 'true';
+        receiptModal.style.display = 'flex';
+      } else {
+        delete receiptModal.dataset.open;
+        receiptModal.style.display = 'none';
+      }
+    };
+
+    const showLoader = () => {
+      if (receiptLoader instanceof HTMLElement) {
+        receiptLoader.removeAttribute('hidden');
+      }
+    };
+
+    const hideLoader = () => {
+      if (receiptLoader instanceof HTMLElement) {
+        receiptLoader.setAttribute('hidden', 'true');
+      }
+    };
+
+    const resetFrame = () => {
+      if (receiptFrame instanceof HTMLIFrameElement) {
+        receiptFrame.src = 'about:blank';
+      }
+    };
+
+    const closeReceiptModal = () => {
+      setOpenState(false);
+      resetFrame();
+      showLoader();
+      document.removeEventListener('keydown', handleKeydown);
+      document.removeEventListener('click', handleBackdropClick, true);
+      document.body.style.overflow = previousBodyOverflow;
+      if (restoreFocusElement instanceof HTMLElement) {
+        restoreFocusElement.focus({ preventScroll: true });
+      }
+    };
+
+    const handleKeydown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeReceiptModal();
+      }
+    };
+
+    const handleBackdropClick = event => {
+      if (!receiptModal.contains(event.target)) {
+        return;
+      }
+      if (event.target instanceof HTMLElement && event.target.hasAttribute('data-receipt-dismiss')) {
+        event.preventDefault();
+        closeReceiptModal();
+      }
+    };
+
+    const openReceiptModal = url => {
+      if (!(receiptFrame instanceof HTMLIFrameElement)) {
+        window.open(url, '_blank', 'noopener');
+        return;
+      }
+      restoreFocusElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      showLoader();
+      setOpenState(true);
+      document.addEventListener('keydown', handleKeydown);
+      document.addEventListener('click', handleBackdropClick, true);
+      const closeBtn = receiptModal.querySelector('[data-receipt-dismiss]');
+      if (closeBtn instanceof HTMLElement) {
+        closeBtn.focus({ preventScroll: true });
+      }
+      try {
+        receiptFrame.src = url;
+      } catch (_error) {
+        hideLoader();
+        window.open(url, '_blank', 'noopener');
+        closeReceiptModal();
+      }
+    };
+
+    if (receiptFrame instanceof HTMLIFrameElement) {
+      receiptFrame.addEventListener('load', () => {
+        if (receiptModal.dataset.open === 'true') {
+          hideLoader();
+        }
+      });
+    }
+
+    dismissControls.forEach(control => {
+      control.addEventListener('click', event => {
+        event.preventDefault();
+        closeReceiptModal();
+      });
+    });
+
+    document.addEventListener('click', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const link = target.closest('[data-print-receipt]');
+      if (!(link instanceof HTMLAnchorElement)) {
+        return;
+      }
+      const href = link.href;
+      if (!href) {
+        return;
+      }
+      event.preventDefault();
+      openReceiptModal(href);
+    });
+  }
+
   const seededToasts = Array.isArray(window.AppInitialToasts) ? window.AppInitialToasts : [];
   seededToasts.forEach(toast => toastManager.show(toast));
   delete window.AppInitialToasts;
@@ -1723,7 +1847,7 @@ document.addEventListener('DOMContentLoaded', () => {
         '<td>' + payment + '</td>' +
         '<td>' + total + '</td>' +
         '<td><span class="badge ' + statusClass + '">' + statusLabel + '</span></td>' +
-        '<td class="table-actions-inline"><a class="btn btn--secondary" href="' + printUrl + '" target="_blank" rel="noopener">Stampa</a></td>' +
+        '<td class="table-actions-inline"><a class="btn btn--secondary" href="' + printUrl + '" target="_blank" rel="noopener" data-print-receipt>Stampa</a></td>' +
       '</tr>';
   }
 

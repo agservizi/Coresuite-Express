@@ -121,7 +121,7 @@ $pagination = $pagination ?? ['page' => 1, 'per_page' => 7, 'total' => 0, 'pages
                                 </span>
                             </td>
                             <td class="table-actions-inline">
-                                <a class="btn btn--secondary" href="print_receipt.php?sale_id=<?= (int) $sale['id'] ?>" target="_blank">Stampa</a>
+                                <a class="btn btn--secondary" href="print_receipt.php?sale_id=<?= (int) $sale['id'] ?>" target="_blank" data-print-receipt>Stampa</a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
