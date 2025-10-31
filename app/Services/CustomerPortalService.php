@@ -12,8 +12,12 @@ use PDOException;
  */
 final class CustomerPortalService
 {
-    public function __construct(private PDO $pdo, private SalesService $salesService, private ProductService $productService)
-    {
+    public function __construct(
+        private PDO $pdo,
+        private SalesService $salesService,
+        private ProductService $productService,
+        private ?SystemNotificationService $notificationService = null
+    ) {
     }
 
     /**
@@ -424,6 +428,61 @@ final class CustomerPortalService
                 ':bank_reference' => $bankReference,
                 ':note' => $note !== '' ? $note : null,
             ]);
+
+            $requestId = (int) $this->pdo->lastInsertId();
+            [$customerName, $portalEmail] = $this->resolvePortalIdentity($portalAccountId, $customerId);
+            $requestLabels = [
+                'Purchase' => 'di acquisto',
+                'Reservation' => 'di prenotazione',
+                'Deposit' => 'con acconto',
+                'Installment' => 'con pagamento rateale',
+            ];
+            $methodLabels = [
+                'BankTransfer' => 'Bonifico',
+                'InStore' => 'Pagamento in negozio',
+                'Other' => 'Metodo non specificato',
+            ];
+            $requestLabel = $requestLabels[$requestType] ?? strtolower($requestType);
+            $methodLabel = $methodLabels[$paymentMethod] ?? $paymentMethod;
+            $productName = (string) ($product['name'] ?? ('Prodotto #' . $productId));
+            $bodyParts = [
+                sprintf('%s ha inviato una richiesta %s per "%s".', $customerName, $requestLabel, $productName),
+                'Metodo indicato: ' . $methodLabel . '.',
+            ];
+            if ($depositAmount !== null) {
+                $bodyParts[] = 'Acconto indicato: € ' . number_format($depositAmount, 2, ',', '.') . '.';
+            }
+            if ($desiredPickup !== null) {
+                $pickupDate = DateTimeImmutable::createFromFormat('Y-m-d', $desiredPickup) ?: null;
+                $bodyParts[] = 'Ritiro richiesto: ' . ($pickupDate !== null ? $pickupDate->format('d/m/Y') : $desiredPickup) . '.';
+            }
+            if ($note !== '') {
+                $bodyParts[] = 'Il cliente ha inserito una nota.';
+            }
+            $meta = [
+                'request_id' => $requestId,
+                'customer_id' => $customerId,
+                'portal_account_id' => $portalAccountId,
+                'product_id' => $productId,
+                'product_name' => $productName,
+                'request_type' => $requestType,
+                'deposit_amount' => $depositAmount,
+                'installments' => $installments,
+                'payment_method' => $paymentMethod,
+                'desired_pickup_date' => $desiredPickup,
+                'bank_reference' => $bankReference,
+                'note' => $note,
+                'portal_email' => $portalEmail,
+                'customer_name' => $customerName,
+            ];
+            $this->notifyPortalEvent(
+                'portal_product_request',
+                'Nuova richiesta prodotto dal portale',
+                implode(' ', $bodyParts),
+                $meta,
+                'info',
+                'index.php?page=product_requests'
+            );
         } catch (PDOException $exception) {
             return [
                 'success' => false,
@@ -606,6 +665,50 @@ final class CustomerPortalService
                 ':method' => $method,
                 ':note' => $note !== null && $note !== '' ? $note : null,
             ]);
+
+            $paymentId = (int) $this->pdo->lastInsertId();
+            [$customerName, $portalEmail] = $this->resolvePortalIdentity($portalAccountId, $customerId);
+            $methodLabels = [
+                'Card' => 'Carta',
+                'BankTransfer' => 'Bonifico',
+                'Cash' => 'Contanti',
+                'Other' => 'Altro',
+            ];
+            $methodLabel = $methodLabels[$method] ?? $method;
+            $formattedAmount = number_format($amount, 2, ',', '.');
+            $remaining = max($balanceDue - $amount, 0.0);
+            $body = sprintf(
+                '%s ha segnalato un pagamento di € %s per la vendita #%d. Metodo: %s. Residuo stimato: € %s.',
+                $customerName,
+                $formattedAmount,
+                $saleId,
+                $methodLabel,
+                number_format($remaining, 2, ',', '.')
+            );
+            if ($note !== null && $note !== '') {
+                $body .= ' Nota cliente presente.';
+            }
+            $meta = [
+                'payment_id' => $paymentId,
+                'sale_id' => $saleId,
+                'amount' => $amount,
+                'payment_method' => $method,
+                'note' => $note,
+                'portal_email' => $portalEmail,
+                'customer_id' => $customerId,
+                'portal_account_id' => $portalAccountId,
+                'customer_name' => $customerName,
+                'balance_due_before' => $balanceDue,
+                'balance_due_after' => $remaining,
+            ];
+            $this->notifyPortalEvent(
+                'portal_payment_signal',
+                'Pagamento segnalato dal portale',
+                $body,
+                $meta,
+                'warning',
+                'index.php?page=sales_list'
+            );
         } catch (PDOException $exception) {
             return [
                 'success' => false,
@@ -738,6 +841,40 @@ final class CustomerPortalService
                 ':message' => $message,
                 ':slot' => $slotValue,
             ]);
+
+            $supportRequestId = (int) $this->pdo->lastInsertId();
+            [$customerName, $portalEmail] = $this->resolvePortalIdentity($portalAccountId, $customerId);
+            $typeLabels = [
+                'Support' => 'di supporto',
+                'Booking' => 'di prenotazione',
+            ];
+            $typeLabel = $typeLabels[$type] ?? strtolower($type);
+            $bodyParts = [
+                sprintf('%s ha inviato una richiesta %s: "%s".', $customerName, $typeLabel, $subject),
+            ];
+            if ($slotValue !== null) {
+                $slot = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $slotValue) ?: null;
+                $bodyParts[] = 'Fascia preferita: ' . ($slot !== null ? $slot->format('d/m/Y H:i') : $slotValue) . '.';
+            }
+            $meta = [
+                'support_request_id' => $supportRequestId,
+                'customer_id' => $customerId,
+                'portal_account_id' => $portalAccountId,
+                'type' => $type,
+                'subject' => $subject,
+                'message' => $message,
+                'preferred_slot' => $slotValue,
+                'portal_email' => $portalEmail,
+                'customer_name' => $customerName,
+            ];
+            $this->notifyPortalEvent(
+                'portal_support_request',
+                'Nuova richiesta di supporto dal portale',
+                implode(' ', $bodyParts),
+                $meta,
+                'info',
+                'index.php?page=support_requests'
+            );
         } catch (PDOException $exception) {
             return [
                 'success' => false,
@@ -768,7 +905,53 @@ final class CustomerPortalService
             ':account_id' => $portalAccountId,
         ]);
         $request = $stmt->fetch(PDO::FETCH_ASSOC);
-
         return $request !== false ? $request : null;
+    }
+
+    /**
+     * @return array{0:string,1:?string}
+     */
+    private function resolvePortalIdentity(int $portalAccountId, int $customerId): array
+    {
+        $profile = $this->getAccountProfile($portalAccountId);
+        $customerName = 'Cliente #' . $customerId;
+        $portalEmail = null;
+
+        if (is_array($profile)) {
+            $nameCandidate = $profile['fullname'] ?? null;
+            if (is_string($nameCandidate) && $nameCandidate !== '') {
+                $customerName = $nameCandidate;
+            }
+
+            $emailCandidate = $profile['email'] ?? ($profile['customer_email'] ?? null);
+            if (is_string($emailCandidate) && $emailCandidate !== '') {
+                $portalEmail = $emailCandidate;
+            }
+        }
+
+        return [$customerName, $portalEmail];
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function notifyPortalEvent(string $type, string $title, string $body, array $meta, string $level, ?string $link = null): void
+    {
+        if ($this->notificationService === null) {
+            return;
+        }
+
+        $options = [
+            'level' => $level,
+            'channel' => 'customer_portal',
+            'source' => 'customer_portal',
+            'meta' => $meta,
+        ];
+
+        if ($link !== null) {
+            $options['link'] = $link;
+        }
+
+        $this->notificationService->push($type, $title, $body, $options);
     }
 }

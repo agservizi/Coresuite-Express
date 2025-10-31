@@ -21,15 +21,26 @@ use App\Controllers\CustomerPortalController;
 use App\Controllers\PrivacyPolicyController;
 use App\Services\CustomerPortalAuthService;
 use App\Services\CustomerPortalService;
+use App\Services\NotificationDispatcher;
 use App\Services\PrivacyPolicyService;
 use App\Services\ProductService;
 use App\Services\SalesService;
+use App\Services\SystemNotificationService;
 
 $pdo = Database::getConnection();
+$notificationsConfig = $GLOBALS['config']['notifications'] ?? [];
+$notificationsLog = __DIR__ . '/../../storage/logs/notifications.log';
+$notificationDispatcher = new NotificationDispatcher(
+    $notificationsConfig['webhook_url'] ?? null,
+    is_array($notificationsConfig['webhook_headers'] ?? null) ? $notificationsConfig['webhook_headers'] : [],
+    is_array($notificationsConfig['queue'] ?? null) ? $notificationsConfig['queue'] : null,
+    $notificationsLog
+);
+$systemNotificationService = new SystemNotificationService($pdo, $notificationDispatcher, $notificationsLog);
 $salesService = new SalesService($pdo);
 $productService = new ProductService($pdo);
 $authService = new CustomerPortalAuthService($pdo);
-$portalService = new CustomerPortalService($pdo, $salesService, $productService);
+$portalService = new CustomerPortalService($pdo, $salesService, $productService, $systemNotificationService);
 $privacyPolicyService = new PrivacyPolicyService($pdo);
 $portalController = new CustomerPortalController($authService, $portalService);
 $privacyPolicyController = new PrivacyPolicyController($privacyPolicyService);
