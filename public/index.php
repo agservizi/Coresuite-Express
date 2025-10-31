@@ -274,6 +274,11 @@ if ($currentUser === null && $page !== 'login') {
 }
 
 if ($page === 'login') {
+    if ($currentUser !== null) {
+        header('Location: index.php');
+        exit;
+    }
+
     render('login', [
         'errors' => [],
         'appName' => $GLOBALS['config']['app']['name'] ?? 'Gestionale Telefonia',
