@@ -1497,6 +1497,33 @@ switch ($page) {
         ]);
         break;
 
+    case 'notifications':
+        if (!isset($systemNotificationService)) {
+            http_response_code(503);
+            echo 'Servizio notifiche non disponibile';
+            exit;
+        }
+
+        $pageNo = isset($_GET['page_no']) ? max((int) $_GET['page_no'], 1) : 1;
+        $perPage = isset($_GET['per_page']) ? max(5, min((int) $_GET['per_page'], 50)) : 20;
+        $focusNotificationId = isset($_GET['focus']) ? max(0, (int) $_GET['focus']) : null;
+
+        $userId = null;
+        if (is_array($currentUser) && isset($currentUser['id'])) {
+            $userId = (int) $currentUser['id'];
+        }
+
+        $feed = $systemNotificationService->getPaginatedFeed($userId, $pageNo, $perPage);
+
+        render('notifications', [
+            'notifications' => $feed['items'],
+            'pagination' => $feed['pagination'],
+            'currentUser' => $currentUser,
+            'focusNotificationId' => $focusNotificationId,
+            'pageTitle' => 'Notifiche',
+        ]);
+        break;
+
     default:
         http_response_code(404);
         echo 'Pagina non trovata';

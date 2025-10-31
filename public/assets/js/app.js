@@ -381,6 +381,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     delete window.AppNotifications;
 
+    const attentionClass = 'topbar__notification-toggle--ping';
+    let attentionTimeoutId = 0;
+
+    const clearBellAttention = () => {
+      if (!toggleBtn) {
+        return;
+      }
+      toggleBtn.classList.remove(attentionClass);
+      if (attentionTimeoutId) {
+        window.clearTimeout(attentionTimeoutId);
+        attentionTimeoutId = 0;
+      }
+    };
+
+    const triggerBellAttention = () => {
+      if (!toggleBtn || isOpen) {
+        return;
+      }
+      toggleBtn.classList.add(attentionClass);
+      if (attentionTimeoutId) {
+        window.clearTimeout(attentionTimeoutId);
+      }
+      attentionTimeoutId = window.setTimeout(clearBellAttention, 1400);
+    };
+
     const setOpen = open => {
       if (!panel || !toggleBtn) {
         return;
@@ -390,6 +415,9 @@ document.addEventListener('DOMContentLoaded', () => {
       toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (open && typeof panel.focus === 'function') {
         panel.focus();
+      }
+      if (open) {
+        clearBellAttention();
       }
     };
 
@@ -454,6 +482,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return `${day}/${month} ${hours}:${minutes}`;
     };
 
+    const buildNotificationLink = item => {
+      if (!item || !item.id) {
+        return null;
+      }
+      if (item.link) {
+        return item.link;
+      }
+      return `index.php?page=notifications&focus=${encodeURIComponent(item.id)}`;
+    };
+
     const buildNotificationHtml = item => {
       if (!item) {
         return '';
@@ -472,16 +510,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const titleHtml = `<span class="topbar__notification-title">${escapeHtml(title)}</span>`;
       const bodyHtml = body ? `<p class="topbar__notification-body">${escapeHtml(body)}</p>` : '';
       const content = `${titleHtml}${bodyHtml}${metaHtml}`;
+      const href = buildNotificationLink(item);
 
-      if (item.link) {
-        return `<li class="${itemClasses.join(' ')}"><a href="${escapeHtml(item.link)}" class="topbar__notification-link">${content}</a></li>`;
+      if (href) {
+        return `<li class="${itemClasses.join(' ')}"><a href="${escapeHtml(href)}" class="topbar__notification-link">${content}</a></li>`;
       }
       return `<li class="${itemClasses.join(' ')}">${content}</li>`;
     };
 
     const renderNotificationState = () => {
       if (listNode instanceof HTMLElement) {
-        const sortedItems = notificationsState.items.slice().sort((a, b) => b.id - a.id);
+        const unreadItems = notificationsState.items.filter(item => item && !item.is_read);
+        const sortedItems = unreadItems.sort((a, b) => b.id - a.id);
         const visibleItems = sortedItems.slice(0, notificationDisplayLimit);
         if (visibleItems.length === 0) {
           listNode.innerHTML = '<li class="topbar__notification-empty">Nessuna notifica recente.</li>';
@@ -494,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mergeNotifications = incoming => {
       if (!Array.isArray(incoming) || incoming.length === 0) {
-        return;
+        return false;
       }
       const byId = new Map();
       notificationsState.items.forEach(item => {
@@ -502,14 +542,19 @@ document.addEventListener('DOMContentLoaded', () => {
           byId.set(item.id, item);
         }
       });
+      let hasNewUnread = false;
       incoming.forEach(raw => {
         const normalized = normalizeNotification(raw);
         if (!normalized) {
           return;
         }
+        const already = byId.get(normalized.id);
         byId.set(normalized.id, normalized);
         if (normalized.id > notificationLastId) {
           notificationLastId = normalized.id;
+        }
+        if (!already || (!normalized.is_read && already.is_read)) {
+          hasNewUnread = hasNewUnread || !normalized.is_read;
         }
       });
       const merged = Array.from(byId.values()).sort((a, b) => b.id - a.id);
@@ -517,6 +562,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ...notificationsState,
         items: merged.slice(0, notificationStorageLimit),
       };
+      return hasNewUnread;
     };
 
     const connectNotificationStream = () => {
@@ -535,8 +581,9 @@ document.addEventListener('DOMContentLoaded', () => {
       source.addEventListener('notifications', event => {
         try {
           const payload = JSON.parse(event.data);
+          let hasNewUnread = false;
           if (payload && Array.isArray(payload.items)) {
-            mergeNotifications(payload.items);
+            hasNewUnread = mergeNotifications(payload.items);
           }
           if (payload && typeof payload.unread_count === 'number') {
             notificationsState.unread_count = payload.unread_count;
@@ -545,6 +592,9 @@ document.addEventListener('DOMContentLoaded', () => {
             notificationLastId = payload.last_id;
           }
           renderNotificationState();
+          if (hasNewUnread) {
+            triggerBellAttention();
+          }
         } catch (error) {
           console.error('Notifiche live non elaborate', error);
         }
@@ -584,6 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
               };
               renderNotificationState();
               setOpen(false);
+              clearBellAttention();
             } else {
               markForm.submit();
             }

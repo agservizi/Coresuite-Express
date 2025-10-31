@@ -175,6 +175,53 @@ final class SystemNotificationService
         ];
     }
 
+    /**
+     * @return array{items: array<int, array<string, mixed>>, pagination: array<string, int>}
+     */
+    public function getPaginatedFeed(?int $userId, int $page = 1, int $perPage = 20): array
+    {
+        $page = max(1, $page);
+        $perPage = max(5, min($perPage, 50));
+        $offset = ($page - 1) * $perPage;
+
+        $conditions = 'recipient_user_id IS NULL';
+        $params = [];
+        if ($userId !== null) {
+            $conditions = '(recipient_user_id IS NULL OR recipient_user_id = :uid)';
+            $params[':uid'] = $userId;
+        }
+
+        $sql = 'SELECT id, type, title, body, level, channel, source, link, meta_json, recipient_user_id, is_read, created_at
+                FROM system_notifications
+                WHERE ' . $conditions . '
+                ORDER BY created_at DESC
+                LIMIT :limit OFFSET :offset';
+
+        $stmt = $this->pdo->prepare($sql);
+        if (array_key_exists(':uid', $params)) {
+            $stmt->bindValue(':uid', (int) $params[':uid'], PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $items = array_map(fn (array $row): array => $this->hydrateNotificationRow($row), $rows);
+
+        $total = $this->countAll($userId);
+        $pages = $perPage > 0 ? (int) ceil($total / $perPage) : 1;
+
+        return [
+            'items' => $items,
+            'pagination' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'pages' => $pages > 0 ? $pages : 1,
+            ],
+        ];
+    }
+
     public function markAllRead(?int $userId = null): int
     {
         if ($userId === null) {
@@ -223,6 +270,21 @@ final class SystemNotificationService
         $params = [];
         if ($userId !== null) {
             $sql .= ' AND (recipient_user_id IS NULL OR recipient_user_id = :uid)';
+            $params[':uid'] = $userId;
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function countAll(?int $userId): int
+    {
+        $sql = 'SELECT COUNT(*) FROM system_notifications';
+        $params = [];
+        if ($userId !== null) {
+            $sql .= ' WHERE recipient_user_id IS NULL OR recipient_user_id = :uid';
             $params[':uid'] = $userId;
         }
 

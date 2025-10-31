@@ -39,6 +39,8 @@ a{text-decoration:none;color:inherit;}
 .toast--reorder .toast__icon{background:rgba(8,145,178,.12);color:#0e7490;}
 @media (max-width:768px){.toast-stack{top:16px;right:16px;left:16px;width:auto;}}
 @keyframes toast-progress{from{transform:scaleX(1);}to{transform:scaleX(0);}}
+@keyframes notification-pulse{0%{transform:scale(1);}30%{transform:scale(1.08);}60%{transform:scale(0.95);}100%{transform:scale(1);}}
+@keyframes notification-bell{0%{transform:rotate(0);}15%{transform:rotate(14deg);}30%{transform:rotate(-12deg);}45%{transform:rotate(10deg);}60%{transform:rotate(-8deg);}75%{transform:rotate(4deg);}100%{transform:rotate(0);}}
 
 .layout{display:flex;min-height:100vh;overflow:hidden;}
 .sidebar{width:240px;background:#1f2933;color:#fff;display:flex;flex-direction:column;transition:width .3s ease;position:fixed;top:0;left:0;bottom:0;overflow:hidden;}
@@ -99,6 +101,8 @@ body[data-sidebar-collapsed="true"] .topbar{padding-left:24px;padding-right:24px
 .topbar__notification-toggle{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;border:1px solid #dbeafe;background:#f8fafc;color:#0f172a;cursor:pointer;transition:background .2s ease,border-color .2s ease,transform .2s ease;position:relative;}
 .topbar__notification-toggle:hover{background:#e2e8f0;border-color:#cbd5f5;transform:translateY(-1px);}
 .topbar__notification-toggle:focus-visible{outline:2px solid rgba(37,99,235,.45);outline-offset:2px;}
+.topbar__notification-toggle--ping{animation:notification-pulse .9s ease-in-out;}
+.topbar__notification-toggle--ping .topbar__notification-icon{animation:notification-bell .9s ease-in-out;}
 .topbar__notification-icon{font-size:18px;line-height:1;}
 .topbar__notification-badge{position:absolute;top:4px;right:6px;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;box-shadow:0 6px 18px rgba(239,68,68,.35);}
 .topbar__notification-badge[hidden]{display:none;}
