@@ -95,7 +95,7 @@ final class ProductService
      * @param array<string, mixed> $input
      * @return array{success:bool, message:string, errors?:array<int, string>}
      */
-    public function create(array $input): array
+    public function create(array $input, ?int $userId = null): array
     {
         $name = isset($input['name']) ? trim((string) $input['name']) : '';
         $sku = isset($input['sku']) ? trim((string) $input['sku']) : '';
@@ -158,6 +158,8 @@ final class ProductService
         }
 
         try {
+            $this->pdo->beginTransaction();
+
             $stmt = $this->pdo->prepare(
                 'INSERT INTO products (name, sku, imei, category, price, stock_quantity, stock_reserved, reorder_threshold, tax_rate, notes, is_active)
                  VALUES (:name, :sku, :imei, :category, :price, :stock_quantity, 0, :reorder_threshold, :tax_rate, :notes, :is_active)'
@@ -174,7 +176,26 @@ final class ProductService
                 ':notes' => $notes !== null && $notes !== '' ? $notes : null,
                 ':is_active' => $isActive,
             ]);
+
+            $productId = (int) $this->pdo->lastInsertId();
+            if ($productId > 0 && $stockQuantity > 0) {
+                $this->insertStockMovement(
+                    $productId,
+                    $stockQuantity,
+                    $stockQuantity,
+                    'Initial',
+                    $userId,
+                    'product_create',
+                    $productId,
+                    'Stock iniziale catalogo'
+                );
+            }
+
+            $this->pdo->commit();
         } catch (PDOException $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             return [
                 'success' => false,
                 'message' => 'Errore durante il salvataggio del prodotto.',
@@ -192,7 +213,7 @@ final class ProductService
      * @param array<string, mixed> $input
      * @return array{success:bool, message:string, errors?:array<int, string>}
      */
-    public function update(int $id, array $input): array
+    public function update(int $id, array $input, ?int $userId = null): array
     {
         $existing = $this->findById($id);
         if ($existing === null) {
@@ -263,7 +284,12 @@ final class ProductService
             }
         }
 
+        $previousStock = (int) ($existing['stock_quantity'] ?? 0);
+        $stockDelta = $stockQuantity - $previousStock;
+
         try {
+            $this->pdo->beginTransaction();
+
             $stmt = $this->pdo->prepare(
                 'UPDATE products
                  SET name = :name,
@@ -291,7 +317,25 @@ final class ProductService
                 ':is_active' => $isActive,
                 ':id' => $id,
             ]);
+
+            if ($stockDelta !== 0) {
+                $this->insertStockMovement(
+                    $id,
+                    $stockDelta,
+                    $stockQuantity,
+                    'Adjustment',
+                    $userId,
+                    'product_update',
+                    $id,
+                    'Allineamento manuale stock'
+                );
+            }
+
+            $this->pdo->commit();
         } catch (PDOException $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             return [
                 'success' => false,
                 'message' => 'Errore durante l\'aggiornamento del prodotto.',
@@ -336,6 +380,28 @@ final class ProductService
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getStockMovements(int $productId, int $limit = 20): array
+    {
+        $productId = max(1, $productId);
+        $limit = max(1, min($limit, 200));
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, product_id, quantity_change, balance_after, reason, reference_type, reference_id, user_id, note, created_at
+             FROM product_stock_movements
+             WHERE product_id = :product_id
+             ORDER BY created_at DESC
+             LIMIT :limit'
+        );
+        $stmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
      * @return array{success:bool, message:string, errors?:array<int, string>}
      */
     public function restock(int $id): array
@@ -363,5 +429,35 @@ final class ProductService
             'success' => true,
             'message' => 'Prodotto riattivato a catalogo.',
         ];
+    }
+
+    private function insertStockMovement(
+        int $productId,
+        int $quantityChange,
+        int $balanceAfter,
+        string $reason,
+        ?int $userId,
+        ?string $referenceType,
+        ?int $referenceId,
+        ?string $note
+    ): void {
+        if ($quantityChange === 0) {
+            return;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO product_stock_movements (product_id, quantity_change, balance_after, reason, reference_type, reference_id, user_id, note)
+             VALUES (:product_id, :quantity_change, :balance_after, :reason, :reference_type, :reference_id, :user_id, :note)'
+        );
+        $stmt->execute([
+            ':product_id' => $productId,
+            ':quantity_change' => $quantityChange,
+            ':balance_after' => $balanceAfter,
+            ':reason' => $reason,
+            ':reference_type' => $referenceType,
+            ':reference_id' => $referenceId,
+            ':user_id' => $userId,
+            ':note' => $note !== null && $note !== '' ? $note : null,
+        ]);
     }
 }

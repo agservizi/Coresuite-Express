@@ -39,18 +39,18 @@ final class ProductController
      * @param array<string, mixed> $input
      * @return array{success:bool, message:string, errors?:array<int, string>}
      */
-    public function create(array $input): array
+    public function create(array $input, ?int $userId = null): array
     {
-        return $this->productService->create($input);
+        return $this->productService->create($input, $userId);
     }
 
     /**
      * @param array<string, mixed> $input
      * @return array{success:bool, message:string, errors?:array<int, string>}
      */
-    public function update(int $id, array $input): array
+    public function update(int $id, array $input, ?int $userId = null): array
     {
-        return $this->productService->update($id, $input);
+        return $this->productService->update($id, $input, $userId);
     }
 
     /**

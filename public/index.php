@@ -279,6 +279,8 @@ switch ($page) {
         $metrics = getDashboardMetrics($pdo, $period);
         $providerInsights = $stockMonitorService->getProviderInsights();
         $stockAlerts = $stockMonitorService->getOpenAlerts();
+        $productInsights = $stockMonitorService->getProductInsights();
+        $productAlerts = $stockMonitorService->getOpenProductAlerts();
         $lowStockCount = 0;
         $lowStockNames = [];
         foreach ($providerInsights as $insight) {
@@ -290,17 +292,29 @@ switch ($page) {
             }
         }
         $metrics['low_stock_providers'] = $lowStockCount;
+        $lowStockProductNames = [];
+        foreach ($productInsights as $productInfo) {
+            if (!empty($productInfo['below_threshold']) && !empty($productInfo['product_name'])) {
+                $lowStockProductNames[] = (string) $productInfo['product_name'];
+            }
+        }
+        $metrics['low_stock_products'] = count($lowStockProductNames);
         $stockRiskSummary = buildStockRiskSummary($providerInsights);
+        $productRiskSummary = buildProductStockRiskSummary($productInsights);
         $nextSteps = buildDashboardNextSteps(
             $metrics,
             $providerInsights,
+            $productInsights,
             $metrics['campaign_performance'] ?? ['items' => []],
-            $stockAlerts
+            $stockAlerts,
+            $productAlerts
         );
         $operationalPulse = buildOperationalPulse(
             $metrics,
             $stockAlerts,
+            $productAlerts,
             $providerInsights,
+            $productInsights,
             $metrics['campaign_performance'] ?? ['items' => []],
             $metrics['support_summary'] ?? [],
             $metrics['billing'] ?? []
@@ -309,10 +323,14 @@ switch ($page) {
             'metrics' => $metrics,
             'stockAlerts' => $stockAlerts,
             'providerInsights' => $providerInsights,
+            'productInsights' => $productInsights,
+            'productAlerts' => $productAlerts,
             'selectedPeriod' => $period,
             'currentUser' => $currentUser,
             'lowStockProviders' => $lowStockNames,
+            'lowStockProducts' => $lowStockProductNames,
             'stockRiskSummary' => $stockRiskSummary,
+            'productRiskSummary' => $productRiskSummary,
             'nextSteps' => $nextSteps,
             'operationalPulse' => $operationalPulse,
         ]);
@@ -430,10 +448,17 @@ switch ($page) {
         }
 
         if ($method === 'POST') {
+            $currentUserId = null;
+            if (is_array($currentUser) && isset($currentUser['id'])) {
+                $candidate = (int) $currentUser['id'];
+                if ($candidate > 0) {
+                    $currentUserId = $candidate;
+                }
+            }
             $action = $_POST['action'] ?? 'create';
             if ($action === 'update') {
                 $productId = isset($_POST['product_id']) ? (int) $_POST['product_id'] : 0;
-                $result = $productController->update($productId, $_POST);
+                $result = $productController->update($productId, $_POST, $currentUserId);
                 if ($result['success'] ?? false) {
                     $_SESSION['products_list_feedback'] = $result;
                     header('Location: index.php?page=products_list');
@@ -444,7 +469,7 @@ switch ($page) {
                 exit;
             }
 
-            $result = $productController->create($_POST);
+            $result = $productController->create($_POST, $currentUserId);
             $_SESSION['products_feedback'] = $result;
             header('Location: index.php?page=products');
             exit;
@@ -2042,7 +2067,9 @@ function buildAnalyticsOverview(array $metrics, array $supportSummary, array $cu
 /**
  * @param array<string, mixed> $metrics
  * @param array<int, array<string, mixed>> $stockAlerts
+ * @param array<int, array<string, mixed>> $productAlerts
  * @param array<int, array<string, mixed>> $providerInsights
+ * @param array<int, array<string, mixed>> $productInsights
  * @param array<string, mixed> $campaignPerformance
  * @param array<string, mixed> $supportSummary
  * @param array<string, mixed> $billing
@@ -2051,7 +2078,9 @@ function buildAnalyticsOverview(array $metrics, array $supportSummary, array $cu
 function buildOperationalPulse(
     array $metrics,
     array $stockAlerts,
+    array $productAlerts,
     array $providerInsights,
+    array $productInsights,
     array $campaignPerformance,
     array $supportSummary,
     array $billing
@@ -2073,9 +2102,14 @@ function buildOperationalPulse(
     $lowStock = array_filter($providerInsights, static fn(array $info): bool => !empty($info['below_threshold']));
     $lowStockNames = array_map(static fn(array $info): string => (string) ($info['provider_name'] ?? ''), $lowStock);
 
+    $lowStockProducts = array_filter($productInsights, static fn(array $info): bool => !empty($info['below_threshold']));
+    $lowStockProductNames = array_map(static fn(array $info): string => (string) ($info['product_name'] ?? ''), $lowStockProducts);
+
     return [
-        'alerts' => $stockAlerts,
+        'provider_alerts' => $stockAlerts,
+        'product_alerts' => $productAlerts,
         'low_stock_providers' => array_slice(array_filter($lowStockNames), 0, 5),
+        'low_stock_products' => array_slice(array_filter($lowStockProductNames), 0, 5),
         'expiring_campaigns' => array_slice($expiringCampaigns, 0, 4),
         'recent_events' => $metrics['recent_events'] ?? [],
         'operator_activity' => $metrics['operator_activity'] ?? [],
@@ -2421,14 +2455,70 @@ function buildStockRiskSummary(array $providerInsights): array
 }
 
 /**
+ * @param array<int, array<string, mixed>> $productInsights
+ * @return array<int, array<string, mixed>>
+ */
+function buildProductStockRiskSummary(array $productInsights): array
+{
+    if ($productInsights === []) {
+        return [];
+    }
+
+    $insights = array_map(static function (array $info): array {
+        $daysCover = $info['days_cover'] ?? null;
+        $daysCover = is_numeric($daysCover) ? (float) $daysCover : null;
+        $riskLevel = 'ok';
+        if (!empty($info['below_threshold'])) {
+            $riskLevel = 'warning';
+            if ($daysCover !== null && $daysCover < 4) {
+                $riskLevel = 'critical';
+            }
+        }
+
+        return [
+            'product_name' => (string) ($info['product_name'] ?? ''),
+            'current_stock' => (int) ($info['current_stock'] ?? 0),
+            'stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
+            'threshold' => (int) ($info['threshold'] ?? 0),
+            'average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+            'days_cover' => $daysCover,
+            'suggested_reorder' => (int) ($info['suggested_reorder'] ?? 0),
+            'risk_level' => $riskLevel,
+        ];
+    }, $productInsights);
+
+    usort($insights, static function (array $a, array $b): int {
+        $rank = ['critical' => 0, 'warning' => 1, 'ok' => 2];
+        $riskA = $rank[$a['risk_level']] ?? 2;
+        $riskB = $rank[$b['risk_level']] ?? 2;
+        if ($riskA !== $riskB) {
+            return $riskA <=> $riskB;
+        }
+        $coverA = $a['days_cover'] ?? PHP_FLOAT_MAX;
+        $coverB = $b['days_cover'] ?? PHP_FLOAT_MAX;
+        return $coverA <=> $coverB;
+    });
+
+    return array_slice($insights, 0, 5);
+}
+
+/**
  * @param array<string, mixed> $metrics
  * @param array<int, array<string, mixed>> $providerInsights
+ * @param array<int, array<string, mixed>> $productInsights
  * @param array<string, mixed> $campaignPerformance
  * @param array<int, array<string, mixed>> $stockAlerts
+ * @param array<int, array<string, mixed>> $productAlerts
  * @return array<int, array<string, string>>
  */
-function buildDashboardNextSteps(array $metrics, array $providerInsights, array $campaignPerformance, array $stockAlerts): array
-{
+function buildDashboardNextSteps(
+    array $metrics,
+    array $providerInsights,
+    array $productInsights,
+    array $campaignPerformance,
+    array $stockAlerts,
+    array $productAlerts
+): array {
     $steps = [];
 
     $lowStock = array_filter($providerInsights, static fn(array $info): bool => !empty($info['below_threshold']));
@@ -2489,6 +2579,28 @@ function buildDashboardNextSteps(array $metrics, array $providerInsights, array 
         ];
     }
 
+    $hardwareLowStock = array_filter($productInsights, static fn(array $info): bool => !empty($info['below_threshold']));
+    if ($hardwareLowStock !== []) {
+        $names = array_map(static fn(array $info): string => (string) ($info['product_name'] ?? ''), $hardwareLowStock);
+        $maxSuggested = 0;
+        foreach ($hardwareLowStock as $info) {
+            $candidate = (int) ($info['suggested_reorder'] ?? 0);
+            if ($candidate > $maxSuggested) {
+                $maxSuggested = $candidate;
+            }
+        }
+
+        $motivation = $maxSuggested > 0
+            ? 'Pianifica ordine per almeno ' . $maxSuggested . ' pezzi e aggiorna la disponibilità online.'
+            : 'Controlla prenotazioni e resi per riallineare lo stock hardware.';
+
+        $steps[] = [
+            'label' => 'Prodotti critici: ' . implode(', ', array_slice($names, 0, 3)),
+            'motivation' => $motivation,
+            'severity' => 'warning',
+        ];
+    }
+
     $campaignItems = $campaignPerformance['items'] ?? [];
     $activeCampaigns = array_filter($campaignItems, static fn(array $item): bool => !empty($item['is_active']));
     if ($activeCampaigns === []) {
@@ -2515,6 +2627,14 @@ function buildDashboardNextSteps(array $metrics, array $providerInsights, array 
     if ($stockAlerts !== []) {
         $steps[] = [
             'label' => 'Gestisci ' . count($stockAlerts) . ' alert di stock aperti.',
+            'motivation' => null,
+            'severity' => 'warning',
+        ];
+    }
+
+    if ($productAlerts !== []) {
+        $steps[] = [
+            'label' => 'Verifica ' . count($productAlerts) . ' alert hardware.',
             'motivation' => null,
             'severity' => 'warning',
         ];

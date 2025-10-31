@@ -40,12 +40,46 @@ final class StockMonitorService
              ORDER BY sa.created_at ASC'
         );
 
+            $rows = $stmt !== false ? $stmt->fetchAll() : [];
+            foreach ($rows as &$row) {
+                if (isset($row['message'])) {
+                    $row['message'] = (string) $row['message'];
+                }
+            }
+
+            return $rows;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getProductInsights(): array
+    {
+        $insights = $this->computeProductInsights();
+        return array_values($insights);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getOpenProductAlerts(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT psa.*, pr.name AS product_name
+             FROM product_stock_alerts psa
+             JOIN products pr ON pr.id = psa.product_id
+             WHERE psa.status = "Open"
+             ORDER BY psa.created_at ASC'
+        );
+
         $rows = $stmt !== false ? $stmt->fetchAll() : [];
-        return array_map(static function (array $row): array {
-            $row['message'] = isset($row['message']) ? (string) $row['message'] : '';
-            $row['last_movement'] = $row['last_movement'] ?? null;
-            return $row;
-        }, $rows ?: []);
+        foreach ($rows as &$row) {
+            if (isset($row['message'])) {
+                $row['message'] = (string) $row['message'];
+            }
+        }
+
+        return $rows;
     }
 
     public function updateThreshold(int $providerId, int $threshold): array
@@ -78,9 +112,68 @@ final class StockMonitorService
     /**
      * Eseguito da cron/CLI: controlla le soglie e registra alert.
      *
-     * @return array{checked:int, created:int, updated:int, resolved:int}
+     * @return array<string, array<string, int>>
      */
     public function checkThresholds(): array
+    {
+        $providerStats = $this->checkProviderThresholds();
+        $productStats = $this->checkProductThresholds();
+
+        return [
+            'providers' => $providerStats,
+            'products' => $productStats,
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function computeProviderInsights(): array
+    {
+        $providers = $this->fetchProviders();
+        if ($providers === []) {
+            return [];
+        }
+
+        $availableByProvider = $this->fetchAvailableStockCounts();
+        $lastMovementByProvider = $this->fetchLastMovement();
+        $salesByProvider = $this->fetchSalesCounts(self::DEFAULT_LOOKBACK_DAYS);
+    $openAlerts = $this->fetchOpenAlertsIndexed();
+
+        $insights = [];
+        foreach ($providers as $provider) {
+            $providerId = (int) $provider['id'];
+            $threshold = (int) $provider['reorder_threshold'];
+            $current = (int) ($availableByProvider[$providerId] ?? 0);
+            $soldCount = (int) ($salesByProvider[$providerId] ?? 0);
+            $averageDaily = self::DEFAULT_LOOKBACK_DAYS > 0
+                ? round($soldCount / self::DEFAULT_LOOKBACK_DAYS, 2)
+                : 0.0;
+            $daysCover = $averageDaily > 0.0
+                ? round($current / $averageDaily, 2)
+                : null;
+
+            $insights[$providerId] = [
+                'provider_id' => $providerId,
+                'provider_name' => (string) $provider['name'],
+                'threshold' => $threshold,
+                'current_stock' => $current,
+                'average_daily_sales' => $averageDaily,
+                'days_cover' => $daysCover,
+                'last_movement' => $lastMovementByProvider[$providerId] ?? null,
+                'below_threshold' => $current < $threshold,
+                'open_alert' => isset($openAlerts[$providerId]),
+                'suggested_reorder' => $this->suggestReorderQuantity($current, $averageDaily, $threshold),
+            ];
+        }
+
+        return $insights;
+    }
+
+    /**
+     * @return array{checked:int, created:int, updated:int, resolved:int}
+     */
+    private function checkProviderThresholds(): array
     {
         $insights = $this->computeProviderInsights();
         if ($insights === []) {
@@ -123,46 +216,92 @@ final class StockMonitorService
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function computeProviderInsights(): array
+    private function computeProductInsights(): array
     {
-        $providers = $this->fetchProviders();
-        if ($providers === []) {
+        $products = $this->fetchProductCatalog();
+        if ($products === []) {
             return [];
         }
 
-        $availableByProvider = $this->fetchAvailableStockCounts();
-        $lastMovementByProvider = $this->fetchLastMovement();
-        $salesByProvider = $this->fetchSalesCounts(self::DEFAULT_LOOKBACK_DAYS);
-        $openAlerts = $this->fetchOpenAlertsIndexed();
+        $lastMovementByProduct = $this->fetchProductLastMovement();
+        $salesByProduct = $this->fetchProductSalesCounts(self::DEFAULT_LOOKBACK_DAYS);
+        $openAlerts = $this->fetchOpenProductAlertsIndexed();
 
         $insights = [];
-        foreach ($providers as $provider) {
-            $providerId = (int) $provider['id'];
-            $threshold = (int) $provider['reorder_threshold'];
-            $current = (int) ($availableByProvider[$providerId] ?? 0);
-            $soldCount = (int) ($salesByProvider[$providerId] ?? 0);
+        foreach ($products as $product) {
+            $productId = (int) $product['id'];
+            $stockQuantity = (int) ($product['stock_quantity'] ?? 0);
+            $stockReserved = (int) ($product['stock_reserved'] ?? 0);
+            $threshold = (int) ($product['reorder_threshold'] ?? 0);
+            $available = max(0, $stockQuantity - $stockReserved);
+            $soldQty = (int) ($salesByProduct[$productId] ?? 0);
             $averageDaily = self::DEFAULT_LOOKBACK_DAYS > 0
-                ? round($soldCount / self::DEFAULT_LOOKBACK_DAYS, 2)
+                ? round($soldQty / self::DEFAULT_LOOKBACK_DAYS, 2)
                 : 0.0;
             $daysCover = $averageDaily > 0.0
-                ? round($current / $averageDaily, 2)
+                ? round($available / max($averageDaily, 0.0001), 2)
                 : null;
 
-            $insights[$providerId] = [
-                'provider_id' => $providerId,
-                'provider_name' => (string) $provider['name'],
+            $insights[$productId] = [
+                'product_id' => $productId,
+                'product_name' => (string) $product['name'],
+                'current_stock' => $available,
+                'stock_quantity' => $stockQuantity,
+                'stock_reserved' => $stockReserved,
                 'threshold' => $threshold,
-                'current_stock' => $current,
                 'average_daily_sales' => $averageDaily,
                 'days_cover' => $daysCover,
-                'last_movement' => $lastMovementByProvider[$providerId] ?? null,
-                'below_threshold' => $current < $threshold,
-                'open_alert' => isset($openAlerts[$providerId]),
-                'suggested_reorder' => $this->suggestReorderQuantity($current, $averageDaily, $threshold),
+                'last_movement' => $lastMovementByProduct[$productId] ?? null,
+                'below_threshold' => $available < $threshold,
+                'open_alert' => isset($openAlerts[$productId]),
+                'suggested_reorder' => $this->suggestReorderQuantity($available, $averageDaily, $threshold),
             ];
         }
 
         return $insights;
+    }
+
+    /**
+     * @return array{checked:int, created:int, updated:int, resolved:int}
+     */
+    private function checkProductThresholds(): array
+    {
+        $insights = $this->computeProductInsights();
+        if ($insights === []) {
+            return ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];
+        }
+
+        $openAlerts = $this->fetchOpenProductAlertsIndexed();
+
+        $created = 0;
+        $updated = 0;
+        $resolved = 0;
+
+        foreach ($insights as $productId => $info) {
+            $belowThreshold = (bool) ($info['below_threshold'] ?? false);
+            if ($belowThreshold) {
+                $message = $this->buildProductAlertMessage($info);
+                if (isset($openAlerts[$productId])) {
+                    $this->updateProductAlert((int) $openAlerts[$productId]['id'], $info, $message);
+                    $updated++;
+                } else {
+                    $this->createProductAlert($productId, $info, $message);
+                    $created++;
+                }
+            } else {
+                if (isset($openAlerts[$productId])) {
+                    $this->resolveProductAlert((int) $openAlerts[$productId]['id']);
+                    $resolved++;
+                }
+            }
+        }
+
+        return [
+            'checked' => count($insights),
+            'created' => $created,
+            'updated' => $updated,
+            'resolved' => $resolved,
+        ];
     }
 
     /**
@@ -171,6 +310,21 @@ final class StockMonitorService
     private function fetchProviders(): array
     {
         $stmt = $this->pdo->query('SELECT id, name, reorder_threshold FROM providers ORDER BY name');
+        return $stmt !== false ? $stmt->fetchAll() : [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchProductCatalog(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT id, name, stock_quantity, stock_reserved, reorder_threshold
+             FROM products
+             WHERE is_active = 1
+             ORDER BY name ASC'
+        );
+
         return $stmt !== false ? $stmt->fetchAll() : [];
     }
 
@@ -242,6 +396,59 @@ final class StockMonitorService
     }
 
     /**
+     * @return array<int, int>
+     */
+    private function fetchProductSalesCounts(int $lookbackDays): array
+    {
+        $fromDate = (new \DateTimeImmutable('-' . $lookbackDays . ' days'))->format('Y-m-d 00:00:00');
+
+        $stmt = $this->pdo->prepare(
+            'SELECT si.product_id, SUM(si.quantity) AS sold
+             FROM sale_items si
+             JOIN sales s ON s.id = si.sale_id
+             WHERE si.product_id IS NOT NULL
+               AND s.status = "Completed"
+               AND s.created_at >= :from_date
+             GROUP BY si.product_id'
+        );
+        $stmt->execute([':from_date' => $fromDate]);
+        $rows = $stmt->fetchAll();
+
+        $sales = [];
+        foreach ($rows as $row) {
+            $productId = (int) ($row['product_id'] ?? 0);
+            if ($productId > 0) {
+                $sales[$productId] = (int) ($row['sold'] ?? 0);
+            }
+        }
+
+        return $sales;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function fetchProductLastMovement(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT product_id, MAX(created_at) AS last_movement
+             FROM product_stock_movements
+             GROUP BY product_id'
+        );
+        $rows = $stmt !== false ? $stmt->fetchAll() : [];
+
+        $map = [];
+        foreach ($rows as $row) {
+            $productId = (int) ($row['product_id'] ?? 0);
+            if ($productId > 0 && !empty($row['last_movement'])) {
+                $map[$productId] = (string) $row['last_movement'];
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function fetchOpenAlertsIndexed(): array
@@ -249,11 +456,26 @@ final class StockMonitorService
         $stmt = $this->pdo->query('SELECT * FROM stock_alerts WHERE status = "Open"');
         $rows = $stmt !== false ? $stmt->fetchAll() : [];
         $indexed = [];
-        $indexed = [];
         foreach ($rows as $row) {
             $row['message'] = isset($row['message']) ? (string) $row['message'] : '';
             $indexed[(int) $row['provider_id']] = $row;
         }
+        return $indexed;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchOpenProductAlertsIndexed(): array
+    {
+        $stmt = $this->pdo->query('SELECT * FROM product_stock_alerts WHERE status = "Open"');
+        $rows = $stmt !== false ? $stmt->fetchAll() : [];
+        $indexed = [];
+        foreach ($rows as $row) {
+            $row['message'] = isset($row['message']) ? (string) $row['message'] : '';
+            $indexed[(int) $row['product_id']] = $row;
+        }
+
         return $indexed;
     }
 
@@ -321,6 +543,71 @@ final class StockMonitorService
     /**
      * @param array<string, mixed> $info
      */
+    private function createProductAlert(int $productId, array $info, string $message): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO product_stock_alerts (
+                 product_id, current_stock, stock_reserved, threshold, average_daily_sales,
+                 days_cover, last_movement, message
+             ) VALUES (:product_id, :current_stock, :stock_reserved, :threshold, :average_daily_sales,
+                 :days_cover, :last_movement, :message)'
+        );
+        $stmt->execute([
+            ':product_id' => $productId,
+            ':current_stock' => (int) ($info['current_stock'] ?? 0),
+            ':stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
+            ':threshold' => (int) ($info['threshold'] ?? 0),
+            ':average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+            ':days_cover' => $info['days_cover'] ?? null,
+            ':last_movement' => $info['last_movement'] ?? null,
+            ':message' => $message,
+        ]);
+
+        $productName = (string) ($info['product_name'] ?? ('Prodotto #' . $productId));
+        $this->notify('Prodotto ' . $productName, $message);
+    }
+
+    /**
+     * @param array<string, mixed> $info
+     */
+    private function updateProductAlert(int $alertId, array $info, string $message): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE product_stock_alerts
+             SET current_stock = :current_stock,
+                 stock_reserved = :stock_reserved,
+                 threshold = :threshold,
+                 average_daily_sales = :average_daily_sales,
+                 days_cover = :days_cover,
+                 last_movement = :last_movement,
+                 message = :message
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            ':current_stock' => (int) ($info['current_stock'] ?? 0),
+            ':stock_reserved' => (int) ($info['stock_reserved'] ?? 0),
+            ':threshold' => (int) ($info['threshold'] ?? 0),
+            ':average_daily_sales' => (float) ($info['average_daily_sales'] ?? 0.0),
+            ':days_cover' => $info['days_cover'] ?? null,
+            ':last_movement' => $info['last_movement'] ?? null,
+            ':message' => $message,
+            ':id' => $alertId,
+        ]);
+    }
+
+    private function resolveProductAlert(int $alertId): void
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE product_stock_alerts
+             SET status = 'Resolved', resolved_at = NOW()
+             WHERE id = :id"
+        );
+        $stmt->execute([':id' => $alertId]);
+    }
+
+    /**
+     * @param array<string, mixed> $info
+     */
     private function buildAlertMessage(array $info): string
     {
         $provider = (string) ($info['provider_name'] ?? 'Operatore sconosciuto');
@@ -344,6 +631,41 @@ final class StockMonitorService
         $suggested = $this->suggestReorderQuantity($current, $average, $threshold);
         if ($suggested > 0) {
             $message .= ' Suggerito riordino minimo: ' . $suggested . ' SIM.';
+        }
+
+        return $message;
+    }
+
+    /**
+     * @param array<string, mixed> $info
+     */
+    private function buildProductAlertMessage(array $info): string
+    {
+        $productName = (string) ($info['product_name'] ?? 'Prodotto sconosciuto');
+        $available = (int) ($info['current_stock'] ?? 0);
+        $stockQuantity = (int) ($info['stock_quantity'] ?? $available);
+        $stockReserved = (int) ($info['stock_reserved'] ?? 0);
+        $threshold = (int) ($info['threshold'] ?? 0);
+        $average = (float) ($info['average_daily_sales'] ?? 0.0);
+        $cover = $info['days_cover'] !== null ? (float) $info['days_cover'] : null;
+
+        $message = sprintf(
+            'Stock prodotto %s sotto soglia: %d disponibili (totale %d, riservati %d) su soglia %d. Media vendite %s/giorno.',
+            $productName,
+            $available,
+            $stockQuantity,
+            $stockReserved,
+            $threshold,
+            number_format($average, 2, ',', '.')
+        );
+
+        if ($cover !== null && $cover > 0) {
+            $message .= ' Copertura stimata: circa ' . number_format($cover, 1, ',', '.') . ' giorni.';
+        }
+
+        $suggested = $this->suggestReorderQuantity($available, $average, $threshold);
+        if ($suggested > 0) {
+            $message .= ' Suggerito riordino minimo: ' . $suggested . ' pezzi.';
         }
 
         return $message;

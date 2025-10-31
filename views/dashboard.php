@@ -4,10 +4,14 @@ declare(strict_types=1);
 /**
  * @var array<string, mixed> $metrics
  * @var array<int, array<string, mixed>> $stockAlerts
+ * @var array<int, array<string, mixed>> $productAlerts
  * @var array<int, array<string, mixed>> $providerInsights
+ * @var array<int, array<string, mixed>> $productInsights
  * @var array<int, array<string, mixed>> $stockRiskSummary
+ * @var array<int, array<string, mixed>> $productRiskSummary
  * @var array<int, array<string, mixed>> $nextSteps
  * @var array<int, string> $lowStockProviders
+ * @var array<int, string> $lowStockProducts
  * @var array<string, mixed> $operationalPulse
  * @var string $selectedPeriod
  */
@@ -33,11 +37,16 @@ $expiringCampaigns = array_slice((array) ($operationalPulse['expiring_campaigns'
 $operatorActivity = array_slice((array) ($operationalPulse['operator_activity'] ?? $metrics['operator_activity'] ?? []), 0, 4);
 $recentEvents = array_slice((array) ($operationalPulse['recent_events'] ?? $metrics['recent_events'] ?? []), 0, 5);
 $stockRiskSummary = array_slice((array) ($stockRiskSummary ?? []), 0, 5);
+$productRiskSummary = array_slice((array) ($productRiskSummary ?? []), 0, 5);
 $topCustomers = array_slice((array) ($customerIntelligence['top_customers'] ?? []), 0, 5);
 $atRiskCustomers = array_slice((array) ($customerIntelligence['at_risk_customers'] ?? []), 0, 5);
 $recentCustomers = array_slice((array) ($customerIntelligence['recent_customers'] ?? []), 0, 4);
 $lowStockProviders = array_slice((array) ($operationalPulse['low_stock_providers'] ?? $lowStockProviders ?? []), 0, 5);
+$lowStockProducts = array_slice((array) ($operationalPulse['low_stock_products'] ?? $lowStockProducts ?? []), 0, 5);
+$providerInsights = (array) ($providerInsights ?? []);
+$productInsights = (array) ($productInsights ?? []);
 $stockAlerts = (array) ($stockAlerts ?? []);
+$productAlerts = (array) ($productAlerts ?? []);
 $nextSteps = (array) ($nextSteps ?? []);
 
 $formatDateTime = static function (?string $value, string $format = 'd/m/Y H:i'): string {
@@ -137,8 +146,10 @@ $forecastTrendLabel = match ($forecast['trend_direction'] ?? 'flat') {
 };
 
 $alertCount = count($stockAlerts);
+$productAlertCount = count($productAlerts);
 $expiringCount = count($expiringCampaigns);
 $lowStockCount = count($lowStockProviders);
+$lowStockProductCount = count($lowStockProducts);
 
 ?>
 <section class="page">
@@ -217,6 +228,7 @@ $lowStockCount = count($lowStockProviders);
             </header>
             <div class="status-chips">
                 <span class="status-chip status-chip--warning">Alert stock: <?= $alertCount ?></span>
+                <span class="status-chip status-chip--warning">Alert hardware: <?= $productAlertCount ?></span>
                 <span class="status-chip status-chip--info">Ticket aperti: <?= $openSupport ?></span>
                 <span class="status-chip status-chip--danger">Pagamenti scoperti: <?= $overdueInvoices['count'] ?></span>
                 <span class="status-chip status-chip--neutral">Campagne in scadenza: <?= $expiringCount ?></span>
@@ -241,6 +253,11 @@ $lowStockCount = count($lowStockProviders);
                     <span>Operatori critici</span>
                     <strong><?= $lowStockCount ?></strong>
                     <small><?= htmlspecialchars(implode(', ', $lowStockProviders)) ?: 'Nessuno' ?></small>
+                </div>
+                <div class="insight-highlight">
+                    <span>Prodotti critici</span>
+                    <strong><?= $lowStockProductCount ?></strong>
+                    <small><?= htmlspecialchars(implode(', ', $lowStockProducts)) ?: 'Nessuno' ?></small>
                 </div>
             </div>
             <div class="insight-split">
@@ -463,94 +480,182 @@ $lowStockCount = count($lowStockProviders);
         </section>
 
     <section class="dashboard-panel dashboard-panel--wide" data-draggable-card="panel-stock">
-            <header class="dashboard-panel__header">
-                <h3>Stock & fornitori</h3>
-                <p class="dashboard-panel__meta">Copertura, soglie e suggerimenti di riordino.</p>
-            </header>
-            <?php if ($stockRiskSummary === []): ?>
-                <p class="muted">Nessun rischio di magazzino rilevato.</p>
-            <?php else: ?>
-                <ul class="stock-list">
-                    <?php foreach ($stockRiskSummary as $risk): ?>
-                        <?php
-                            $riskLevel = htmlspecialchars((string) ($risk['risk_level'] ?? 'ok'));
-                            $coverage = $risk['days_cover'] ?? null;
-                        ?>
-                        <li class="stock-item stock-item--<?= $riskLevel ?>">
-                            <div class="stock-item__header">
-                                <strong><?= htmlspecialchars((string) ($risk['provider_name'] ?? '')) ?></strong>
-                                <span><?= (int) ($risk['current_stock'] ?? 0) ?> disponibili · soglia <?= (int) ($risk['threshold'] ?? 0) ?></span>
-                            </div>
-                            <div class="stock-item__meta">
-                                <span>Vendite/giorno <?= number_format((float) ($risk['average_daily_sales'] ?? 0.0), 2, ',', '.') ?></span>
-                                <span>Copertura <?= $coverage !== null ? number_format((float) $coverage, 1, ',', '.') . ' gg' : 'n/d' ?></span>
-                                <?php if (!empty($risk['suggested_reorder'])): ?>
-                                    <span>Riordino consigliato <?= (int) $risk['suggested_reorder'] ?> SIM</span>
-                                <?php endif; ?>
-                            </div>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            <?php endif; ?>
-            <div class="table-wrapper table-wrapper--embedded" style="margin-top:16px;">
-                <table class="table table--compact">
-                    <thead>
-                        <tr>
-                            <th>Operatore</th>
-                            <th>Disponibili</th>
-                            <th>Soglia</th>
-                            <th>Media/die</th>
-                            <th>Copertura</th>
-                            <th>Suggerimento</th>
-                            <th>Ultimo movimento</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($providerInsights === []): ?>
-                            <tr><td colspan="7">Nessun operatore configurato.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($providerInsights as $insight): ?>
-                                <?php $isLow = !empty($insight['below_threshold']); ?>
-                                <tr class="<?= $isLow ? 'table-row--warning' : '' ?>">
-                                    <td><?= htmlspecialchars((string) ($insight['provider_name'] ?? '')) ?></td>
-                                    <td><?= (int) ($insight['current_stock'] ?? 0) ?></td>
-                                    <td><?= (int) ($insight['threshold'] ?? 0) ?></td>
-                                    <td><?= number_format((float) ($insight['average_daily_sales'] ?? 0.0), 2, ',', '.') ?></td>
-                                    <td>
-                                        <?php if (!isset($insight['days_cover']) || $insight['days_cover'] === null): ?>
-                                            n/d
-                                        <?php else: ?>
-                                            <?= number_format((float) $insight['days_cover'], 1, ',', '.') ?> gg
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if ((int) ($insight['suggested_reorder'] ?? 0) > 0): ?>
-                                            Riordina <?= (int) $insight['suggested_reorder'] ?> SIM
-                                        <?php else: ?>
-                                            Nessuna azione urgente
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($insight['last_movement'])): ?>
-                                            <?= htmlspecialchars($formatDateTime((string) $insight['last_movement'])) ?>
-                                        <?php else: ?>
-                                            n/d
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+        <header class="dashboard-panel__header">
+            <h3>Stock & fornitori</h3>
+            <p class="dashboard-panel__meta">Copertura, soglie e suggerimenti di riordino.</p>
+        </header>
+        <div class="insight-split">
+            <div>
+                <h4 class="insight-title">Operatori critici</h4>
+                <?php if ($stockRiskSummary === []): ?>
+                    <p class="muted">Nessun rischio di magazzino rilevato.</p>
+                <?php else: ?>
+                    <ul class="stock-list">
+                        <?php foreach ($stockRiskSummary as $risk): ?>
+                            <?php
+                                $riskLevel = htmlspecialchars((string) ($risk['risk_level'] ?? 'ok'));
+                                $coverage = $risk['days_cover'] ?? null;
+                            ?>
+                            <li class="stock-item stock-item--<?= $riskLevel ?>">
+                                <div class="stock-item__header">
+                                    <strong><?= htmlspecialchars((string) ($risk['provider_name'] ?? '')) ?></strong>
+                                    <span><?= (int) ($risk['current_stock'] ?? 0) ?> disponibili · soglia <?= (int) ($risk['threshold'] ?? 0) ?></span>
+                                </div>
+                                <div class="stock-item__meta">
+                                    <span>Vendite/giorno <?= number_format((float) ($risk['average_daily_sales'] ?? 0.0), 2, ',', '.') ?></span>
+                                    <span>Copertura <?= $coverage !== null ? number_format((float) $coverage, 1, ',', '.') . ' gg' : 'n/d' ?></span>
+                                    <?php if (!empty($risk['suggested_reorder'])): ?>
+                                        <span>Riordino consigliato <?= (int) $risk['suggested_reorder'] ?> SIM</span>
+                                    <?php endif; ?>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
             </div>
-        </section>
-    </div>
+            <div>
+                <h4 class="insight-title">Hardware critico</h4>
+                <?php if ($productRiskSummary === []): ?>
+                    <p class="muted">Nessun prodotto sotto soglia.</p>
+                <?php else: ?>
+                    <ul class="stock-list">
+                        <?php foreach ($productRiskSummary as $risk): ?>
+                            <?php
+                                $riskLevel = htmlspecialchars((string) ($risk['risk_level'] ?? 'ok'));
+                                $coverage = $risk['days_cover'] ?? null;
+                            ?>
+                            <li class="stock-item stock-item--<?= $riskLevel ?>">
+                                <div class="stock-item__header">
+                                    <strong><?= htmlspecialchars((string) ($risk['product_name'] ?? '')) ?></strong>
+                                    <span><?= (int) ($risk['current_stock'] ?? 0) ?> disponibili · riservati <?= (int) ($risk['stock_reserved'] ?? 0) ?> · soglia <?= (int) ($risk['threshold'] ?? 0) ?></span>
+                                </div>
+                                <div class="stock-item__meta">
+                                    <span>Vendite/giorno <?= number_format((float) ($risk['average_daily_sales'] ?? 0.0), 2, ',', '.') ?></span>
+                                    <span>Copertura <?= $coverage !== null ? number_format((float) $coverage, 1, ',', '.') . ' gg' : 'n/d' ?></span>
+                                    <?php if (!empty($risk['suggested_reorder'])): ?>
+                                        <span>Riordino consigliato <?= (int) $risk['suggested_reorder'] ?> pezzi</span>
+                                    <?php endif; ?>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        </div>
+        <div class="table-wrapper table-wrapper--embedded" style="margin-top:16px;">
+            <table class="table table--compact">
+                <thead>
+                    <tr>
+                        <th>Operatore</th>
+                        <th>Disponibili</th>
+                        <th>Soglia</th>
+                        <th>Media/die</th>
+                        <th>Copertura</th>
+                        <th>Suggerimento</th>
+                        <th>Ultimo movimento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($providerInsights === []): ?>
+                        <tr><td colspan="7">Nessun operatore configurato.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($providerInsights as $insight): ?>
+                            <?php $isLow = !empty($insight['below_threshold']); ?>
+                            <tr class="<?= $isLow ? 'table-row--warning' : '' ?>">
+                                <td><?= htmlspecialchars((string) ($insight['provider_name'] ?? '')) ?></td>
+                                <td><?= (int) ($insight['current_stock'] ?? 0) ?></td>
+                                <td><?= (int) ($insight['threshold'] ?? 0) ?></td>
+                                <td><?= number_format((float) ($insight['average_daily_sales'] ?? 0.0), 2, ',', '.') ?></td>
+                                <td>
+                                    <?php if (!isset($insight['days_cover']) || $insight['days_cover'] === null): ?>
+                                        n/d
+                                    <?php else: ?>
+                                        <?= number_format((float) $insight['days_cover'], 1, ',', '.') ?> gg
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ((int) ($insight['suggested_reorder'] ?? 0) > 0): ?>
+                                        Riordina <?= (int) $insight['suggested_reorder'] ?> SIM
+                                    <?php else: ?>
+                                        Nessuna azione urgente
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if (!empty($insight['last_movement'])): ?>
+                                        <?= htmlspecialchars($formatDateTime((string) $insight['last_movement'])) ?>
+                                    <?php else: ?>
+                                        n/d
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div class="table-wrapper table-wrapper--embedded" style="margin-top:16px;">
+            <table class="table table--compact">
+                <thead>
+                    <tr>
+                        <th>Prodotto</th>
+                        <th>Disponibili</th>
+                        <th>Riservati</th>
+                        <th>Soglia</th>
+                        <th>Media/die</th>
+                        <th>Copertura</th>
+                        <th>Suggerimento</th>
+                        <th>Ultimo movimento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($productInsights === []): ?>
+                        <tr><td colspan="8">Nessun prodotto attivo.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($productInsights as $insight): ?>
+                            <?php $isLowProduct = !empty($insight['below_threshold']); ?>
+                            <tr class="<?= $isLowProduct ? 'table-row--warning' : '' ?>">
+                                <td><?= htmlspecialchars((string) ($insight['product_name'] ?? '')) ?></td>
+                                <td><?= (int) ($insight['current_stock'] ?? 0) ?></td>
+                                <td><?= (int) ($insight['stock_reserved'] ?? 0) ?></td>
+                                <td><?= (int) ($insight['threshold'] ?? 0) ?></td>
+                                <td><?= number_format((float) ($insight['average_daily_sales'] ?? 0.0), 2, ',', '.') ?></td>
+                                <td>
+                                    <?php if (!isset($insight['days_cover']) || $insight['days_cover'] === null): ?>
+                                        n/d
+                                    <?php else: ?>
+                                        <?= number_format((float) $insight['days_cover'], 1, ',', '.') ?> gg
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ((int) ($insight['suggested_reorder'] ?? 0) > 0): ?>
+                                        Riordina <?= (int) $insight['suggested_reorder'] ?> pezzi
+                                    <?php else: ?>
+                                        Nessuna azione urgente
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if (!empty($insight['last_movement'])): ?>
+                                        <?= htmlspecialchars($formatDateTime((string) $insight['last_movement'])) ?>
+                                    <?php else: ?>
+                                        n/d
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 
-    <?php if ($stockAlerts !== []): ?>
-        <section class="page__section">
-            <h3>Alert operativi</h3>
+<?php if ($stockAlerts !== [] || $productAlerts !== []): ?>
+    <section class="page__section">
+        <h3>Alert operativi</h3>
+        <?php if ($stockAlerts !== []): ?>
+            <h4 class="insight-title">Operatori</h4>
             <div class="alert-list">
-                <?php foreach ($stockAlerts as $alert): ?>
+                <?php foreach ($stockAlerts as $alert) { ?>
                     <article class="alert-card">
                         <header class="alert-card__header">
                             <h4><?= htmlspecialchars((string) ($alert['provider_name'] ?? '')) ?></h4>
@@ -559,8 +664,24 @@ $lowStockCount = count($lowStockProviders);
                         <p class="alert-card__message"><?= htmlspecialchars((string) ($alert['message'] ?? '')) ?></p>
                         <p class="alert-card__meta">Ultimo controllo <?= htmlspecialchars($formatDateTime($alert['updated_at'] ?? '')) ?></p>
                     </article>
-                <?php endforeach; ?>
+                <?php } ?>
             </div>
-        </section>
-    <?php endif; ?>
+        <?php endif; ?>
+        <?php if ($productAlerts !== []): ?>
+            <h4 class="insight-title">Hardware</h4>
+            <div class="alert-list">
+                <?php foreach ($productAlerts as $alert) { ?>
+                    <article class="alert-card">
+                        <header class="alert-card__header">
+                            <h4><?= htmlspecialchars((string) ($alert['product_name'] ?? '')) ?></h4>
+                            <span class="badge badge--warning">Sotto soglia</span>
+                        </header>
+                        <p class="alert-card__message"><?= htmlspecialchars((string) ($alert['message'] ?? '')) ?></p>
+                        <p class="alert-card__meta">Ultimo controllo <?= htmlspecialchars($formatDateTime($alert['updated_at'] ?? '')) ?></p>
+                    </article>
+                <?php } ?>
+            </div>
+        <?php endif; ?>
+    </section>
+<?php endif; ?>
 </section>

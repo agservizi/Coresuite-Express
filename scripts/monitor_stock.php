@@ -28,7 +28,15 @@ $logPath = __DIR__ . '/../storage/logs/stock_alerts.log';
 $monitor = new StockMonitorService($pdo, $alertEmail, $logPath, $resendApiKey, $resendFrom);
 $result = $monitor->checkThresholds();
 
-echo 'Operatori analizzati: ' . $result['checked'] . PHP_EOL;
-echo 'Alert creati: ' . $result['created'] . PHP_EOL;
-echo 'Alert aggiornati: ' . $result['updated'] . PHP_EOL;
-echo 'Alert risolti: ' . $result['resolved'] . PHP_EOL;
+$providerStats = $result['providers'] ?? ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];
+$productStats = $result['products'] ?? ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];
+
+echo 'Operatori analizzati: ' . $providerStats['checked'] . PHP_EOL;
+echo 'Alert operatori creati: ' . $providerStats['created'] . PHP_EOL;
+echo 'Alert operatori aggiornati: ' . $providerStats['updated'] . PHP_EOL;
+echo 'Alert operatori risolti: ' . $providerStats['resolved'] . PHP_EOL;
+echo str_repeat('-', 32) . PHP_EOL;
+echo 'Prodotti analizzati: ' . $productStats['checked'] . PHP_EOL;
+echo 'Alert prodotti creati: ' . $productStats['created'] . PHP_EOL;
+echo 'Alert prodotti aggiornati: ' . $productStats['updated'] . PHP_EOL;
+echo 'Alert prodotti risolti: ' . $productStats['resolved'] . PHP_EOL;
