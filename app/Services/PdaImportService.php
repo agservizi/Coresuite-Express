@@ -437,6 +437,9 @@ final class PdaImportService
 
         $items = [];
         $rowCount = max(count($iccids), count($plans), count($msisdnList));
+        $isFastweb = $this->isFastwebProvider($providerName);
+        $fastwebSeen = [];
+        $fastwebDuplicates = 0;
         for ($i = 0; $i < $rowCount; $i++) {
             $iccid = $iccids[$i] ?? $iccids[0] ?? null;
             $plan = $plans[$i] ?? $plans[0] ?? null;
@@ -447,8 +450,21 @@ final class PdaImportService
                 continue;
             }
 
+            $normalizedIccid = $this->normalizeIccid($iccid);
+
+            if ($isFastweb) {
+                if ($normalizedIccid === null) {
+                    continue;
+                }
+                if (isset($fastwebSeen[$normalizedIccid])) {
+                    $fastwebDuplicates++;
+                    continue;
+                }
+                $fastwebSeen[$normalizedIccid] = true;
+            }
+
             $items[] = [
-                'iccid' => $this->normalizeIccid($iccid),
+                'iccid' => $normalizedIccid,
                 'plan' => $plan,
                 'msisdn' => $msisdn,
                 'price' => $price,
@@ -459,7 +475,11 @@ final class PdaImportService
             return ['success' => false, 'error' => 'Impossibile individuare ICCID o offerta nella PDA.'];
         }
 
-        if (count($iccids) > 1) {
+        if ($isFastweb) {
+            if ($fastwebDuplicates > 0) {
+                $warnings[] = 'Rilevati ' . $fastwebDuplicates . ' riferimenti duplicati agli stessi ICCID: mantenute solo le SIM uniche.';
+            }
+        } elseif (count($iccids) > 1) {
             $warnings[] = 'Sono stati rilevati ' . count($iccids) . ' ICCID: verifica le righe prima di salvare la vendita.';
         }
         if ($customer['fullname'] === null) {
@@ -618,6 +638,11 @@ final class PdaImportService
             'items' => $resolved,
             'warnings' => $warnings,
         ];
+    }
+
+    private function isFastwebProvider(string $providerName): bool
+    {
+        return stripos($providerName, 'fastweb') !== false;
     }
 
     /**
