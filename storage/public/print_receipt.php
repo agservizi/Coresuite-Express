@@ -18,7 +18,7 @@ spl_autoload_register(static function (string $class): void {
 use App\Services\SalesService;
 
 $pdo = Database::getConnection();
-$salesService = new SalesService($pdo, null);
+$salesService = new SalesService($pdo);
 
 $saleId = isset($_GET['sale_id']) ? (int) $_GET['sale_id'] : 0;
 if ($saleId <= 0) {

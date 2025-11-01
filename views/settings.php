@@ -24,10 +24,6 @@ declare(strict_types=1);
  * @var array{client_id:string, client_secret:string}|null $ssoSecretPreview
  * @var bool $ssoOpen
  * @var int $ssoTokenTtl
- * @var array<string, mixed> $coresuiteIntegration
- * @var bool $canRotateCoresuiteKey
- * @var string|null $coresuiteKeyPreview
- * @var bool $integrationsOpen
  */
 $pageTitle = $pageTitle ?? 'Impostazioni';
 $roles = $roles ?? [];
@@ -62,13 +58,6 @@ $ssoFeedback = isset($ssoFeedback) && is_array($ssoFeedback) ? $ssoFeedback : nu
 $ssoSecretPreview = isset($ssoSecretPreview) && is_array($ssoSecretPreview) ? $ssoSecretPreview : null;
 $ssoOpen = isset($ssoOpen) ? (bool) $ssoOpen : false;
 $ssoTokenTtl = isset($ssoTokenTtl) ? (int) $ssoTokenTtl : 0;
-$coresuiteIntegration = isset($coresuiteIntegration) && is_array($coresuiteIntegration) ? $coresuiteIntegration : [];
-$canRotateCoresuiteKey = isset($canRotateCoresuiteKey) ? (bool) $canRotateCoresuiteKey : false;
-$coresuiteKeyPreview = isset($coresuiteKeyPreview) && is_string($coresuiteKeyPreview) ? $coresuiteKeyPreview : null;
-$integrationsOpen = isset($integrationsOpen) ? (bool) $integrationsOpen : false;
-if ($coresuiteKeyPreview !== null) {
-    $integrationsOpen = true;
-}
 if (!$fiscalOpen && $feedback !== null) {
     $messagesToInspect = [];
     if (isset($feedback['message'])) {
@@ -115,99 +104,6 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
     <?php endif; ?>
 
     <div class="settings-accordion" data-accordion-group>
-        <?php
-            $coresuiteBaseUrl = isset($coresuiteIntegration['base_url']) ? trim((string) $coresuiteIntegration['base_url']) : '';
-            $coresuiteTenant = isset($coresuiteIntegration['tenant']) ? trim((string) $coresuiteIntegration['tenant']) : '';
-            $coresuiteWebhook = isset($coresuiteIntegration['webhook_secret']) ? trim((string) $coresuiteIntegration['webhook_secret']) : '';
-            $coresuiteApiKey = isset($coresuiteIntegration['api_key']) ? trim((string) $coresuiteIntegration['api_key']) : '';
-            $maskedApiKey = null;
-            if ($coresuiteApiKey !== '') {
-                $maskedApiKey = strlen($coresuiteApiKey) > 8
-                    ? substr($coresuiteApiKey, 0, 4) . '...' . substr($coresuiteApiKey, -4)
-                    : '***';
-            }
-            $maskedWebhook = null;
-            if ($coresuiteWebhook !== '') {
-                $maskedWebhook = strlen($coresuiteWebhook) > 8
-                    ? substr($coresuiteWebhook, 0, 4) . '...' . substr($coresuiteWebhook, -4)
-                    : '***';
-            }
-        ?>
-        <article class="settings-accordion__item" data-accordion data-open="<?= $integrationsOpen ? 'true' : 'false' ?>">
-            <button type="button" class="settings-accordion__toggle" data-accordion-toggle aria-expanded="<?= $integrationsOpen ? 'true' : 'false' ?>">
-                <span class="settings-accordion__title">Integrazione business.coresuite.it</span>
-                <span class="settings-accordion__icon" aria-hidden="true"></span>
-            </button>
-            <div class="settings-accordion__content" data-accordion-content <?= $integrationsOpen ? '' : 'hidden' ?>>
-                <p class="muted">Gestisci le credenziali che Express utilizza per sincronizzare dati con business.coresuite.it.</p>
-                <div class="table-wrapper table-wrapper--embedded">
-                    <table class="table table--compact">
-                        <tbody>
-                            <tr>
-                                <th scope="row">Base URL</th>
-                                <td>
-                                    <?php if ($coresuiteBaseUrl !== ''): ?>
-                                        <?= htmlspecialchars($coresuiteBaseUrl) ?>
-                                    <?php else: ?>
-                                        <span class="muted">Non configurato</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">Tenant</th>
-                                <td>
-                                    <?php if ($coresuiteTenant !== ''): ?>
-                                        <?= htmlspecialchars($coresuiteTenant) ?>
-                                    <?php else: ?>
-                                        <span class="muted">Non configurato</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">API Key attuale</th>
-                                <td>
-                                    <?php if ($maskedApiKey !== null): ?>
-                                        <?= htmlspecialchars($maskedApiKey) ?>
-                                    <?php else: ?>
-                                        <span class="muted">Non configurata</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">Webhook secret</th>
-                                <td>
-                                    <?php if ($maskedWebhook !== null): ?>
-                                        <?= htmlspecialchars($maskedWebhook) ?>
-                                    <?php else: ?>
-                                        <span class="muted">Non configurato</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <?php if ($coresuiteKeyPreview !== null): ?>
-                    <div class="alert alert--success" role="status">
-                        <p><strong>Nuova API key generata</strong></p>
-                        <p><code><?= htmlspecialchars($coresuiteKeyPreview) ?></code></p>
-                        <p class="muted">Copia la chiave e aggiorna anche la configurazione su business.coresuite.it.</p>
-                    </div>
-                <?php endif; ?>
-
-                <?php if (!$canRotateCoresuiteKey): ?>
-                    <div class="alert alert--error">
-                        <p>Impossibile scrivere sul file <code>.env</code>. Aggiorna i permessi e riprova.</p>
-                    </div>
-                <?php else: ?>
-                    <form method="post" class="form settings-form">
-                        <input type="hidden" name="action" value="generate_coresuite_api_key">
-                        <button type="submit" class="btn btn--primary">Genera nuova API key</button>
-                    </form>
-                    <p class="muted">L'operazione sovrascrive <code>CORESUITE_API_KEY</code> nel file <code>.env</code>. Aggiorna l'ERP prima di usare la nuova chiave.</p>
-                <?php endif; ?>
-            </div>
-        </article>
         <article class="settings-accordion__item" data-accordion data-open="<?= $inventoryOpen ? 'true' : 'false' ?>">
             <button type="button" class="settings-accordion__toggle" data-accordion-toggle aria-expanded="<?= $inventoryOpen ? 'true' : 'false' ?>">
                 <span class="settings-accordion__title">Magazzino e soglie</span>

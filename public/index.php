@@ -183,9 +183,6 @@ use App\Services\NotificationDispatcher;
 use App\Services\SystemNotificationService;
 use App\Services\SsoService;
 use App\Services\PdaImportService;
-use App\Helpers\EnvWriter;
-use App\Services\Integrations\IntegrationService;
-use App\Services\Integrations\IntegrationSettingsService;
 
 $pdo = Database::getConnection();
 
@@ -221,26 +218,18 @@ $notificationDispatcher = new NotificationDispatcher(
 $systemNotificationService = new SystemNotificationService($pdo, $notificationDispatcher, $notificationsLog);
 $GLOBALS['systemNotificationService'] = $systemNotificationService;
 
-$integrationsConfig = $GLOBALS['config']['integrations'] ?? [];
-require_once __DIR__ . '/../app/bootstrap/integrations.php';
-$integrationService = bootstrapIntegrationService(is_array($integrationsConfig) ? $integrationsConfig : []);
-$GLOBALS['integrationService'] = $integrationService;
-$envPath = dirname(__DIR__) . '/.env';
-$envWriter = new EnvWriter($envPath);
-$integrationSettingsService = new IntegrationSettingsService($pdo, $envWriter);
-
 if ($saleFulfilmentEmail === null || !filter_var($saleFulfilmentEmail, FILTER_VALIDATE_EMAIL)) {
     $saleFulfilmentEmail = $alertEmail;
 }
 
 $authService = new AuthService($pdo);
 $iccidService = new ICCIDService($pdo);
-$customerService = new CustomerService($pdo, $resendApiKey, $resendFrom, $appName, $portalLoginUrl, $resendFromName, $integrationService);
+$customerService = new CustomerService($pdo, $resendApiKey, $resendFrom, $appName, $portalLoginUrl, $resendFromName);
 $offersService = new OffersService($pdo);
 $reportsService = new ReportsService($pdo);
-$productService = new ProductService($pdo, $integrationService);
+$productService = new ProductService($pdo);
 $productRequestService = new ProductRequestService($pdo);
-$salesService = new SalesService($pdo, $integrationService);
+$salesService = new SalesService($pdo);
 $discountCampaignService = new DiscountCampaignService($pdo);
 $pdaImportService = new PdaImportService($pdo, $customerService);
 $supportRequestService = new SupportRequestService($pdo);
@@ -1045,11 +1034,8 @@ switch ($page) {
         unset($_SESSION['settings_sso_feedback']);
         $ssoSecretPreview = $_SESSION['settings_sso_secret'] ?? null;
         unset($_SESSION['settings_sso_secret']);
-    $ssoEnabled = $ssoService->isEnabled();
+        $ssoEnabled = $ssoService->isEnabled();
         $isAdmin = $authService->hasRole('admin');
-    $coresuiteKeyPreview = $_SESSION['settings_coresuite_key'] ?? null;
-    unset($_SESSION['settings_coresuite_key']);
-    $integrationsOpenOverride = isset($_GET['integrations_open']);
 
         $operatorEdit = null;
         $operatorEditForm = null;
@@ -1326,22 +1312,6 @@ switch ($page) {
                     $result = $ssoService->deleteClient($clientRowId);
                 }
                 $_SESSION['settings_sso_feedback'] = $result;
-            } elseif ($action === 'generate_coresuite_api_key') {
-                $redirectParams['integrations_open'] = 1;
-                if (!$isAdmin) {
-                    $result = [
-                        'success' => false,
-                        'message' => 'Operazione non autorizzata.',
-                        'error' => 'Solo gli amministratori possono ruotare la chiave di integrazione.',
-                    ];
-                } else {
-                    $generation = $integrationSettingsService->generateCoresuiteApiKey($currentUserId);
-                    if (($generation['success'] ?? false) && isset($generation['api_key'])) {
-                        $_SESSION['settings_coresuite_key'] = (string) $generation['api_key'];
-                        unset($generation['api_key']);
-                    }
-                    $result = $generation;
-                }
             } else {
                 $result = [
                     'success' => false,
@@ -1397,9 +1367,6 @@ switch ($page) {
         };
         $auditOpen = isset($_GET['audit_page']) || isset($_GET['audit_per_page']) || isset($_GET['audit_open']);
 
-        $coresuiteConfig = is_array($integrationsConfig['coresuite'] ?? null) ? $integrationsConfig['coresuite'] : [];
-        $integrationsOpen = $integrationsOpenOverride || $coresuiteKeyPreview !== null;
-
         render('settings', [
             'providerInsights' => $stockMonitorService->getProviderInsights(),
             'stockAlerts' => $stockMonitorService->getOpenAlerts(),
@@ -1425,10 +1392,6 @@ switch ($page) {
             'ssoSecretPreview' => $ssoSecretPreview,
             'ssoOpen' => $ssoOpen,
             'ssoTokenTtl' => $ssoService->getTokenTtl(),
-            'coresuiteIntegration' => $coresuiteConfig,
-            'canRotateCoresuiteKey' => $integrationSettingsService->canUpdateEnv(),
-            'coresuiteKeyPreview' => $coresuiteKeyPreview,
-            'integrationsOpen' => $integrationsOpen,
         ]);
         break;
 

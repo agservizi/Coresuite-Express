@@ -203,12 +203,12 @@ if ($saleFulfilmentEmail === null || !filter_var($saleFulfilmentEmail, FILTER_VA
 
 $authService = new AuthService($pdo);
 $iccidService = new ICCIDService($pdo);
-$customerService = new CustomerService($pdo, $resendApiKey, $resendFrom, $appName, $portalLoginUrl, $resendFromName, null);
+$customerService = new CustomerService($pdo, $resendApiKey, $resendFrom, $appName, $portalLoginUrl, $resendFromName);
 $offersService = new OffersService($pdo);
 $reportsService = new ReportsService($pdo);
-$productService = new ProductService($pdo, null);
+$productService = new ProductService($pdo);
 $productRequestService = new ProductRequestService($pdo);
-$salesService = new SalesService($pdo, null);
+$salesService = new SalesService($pdo);
 $discountCampaignService = new DiscountCampaignService($pdo);
 $supportRequestService = new SupportRequestService($pdo);
 $userService = new UserService($pdo);

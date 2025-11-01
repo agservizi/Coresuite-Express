@@ -38,16 +38,6 @@ Gestionale web minimale per negozio di telefonia, pensato per essere avviato vel
 | `NOTIFICATIONS_QUEUE_ROUTING_KEY` | Routing key per la pubblicazione (default `event`). |
 | `NOTIFICATIONS_QUEUE_NAME` | Nome coda da dichiarare/bindare automaticamente (facoltativo). |
 | `NOTIFICATIONS_TOPBAR_LIMIT` | Numero massimo di notifiche mostrate nel menu rapido (default `10`). |
-| `CORESUITE_BASE_URL`, `CORESUITE_API_KEY` | URL base e API key per sincronizzare clienti, prodotti e vendite con `business.coresuite.it`. |
-| `CORESUITE_TENANT`, `CORESUITE_WEBHOOK_SECRET` | Intestazioni opzionali per multi-tenant e validazione webhook lato ERP. |
-| `CORESUITE_ENDPOINTS` | Mappa JSON facoltativa per sovrascrivere gli endpoint REST di default (es. `{ "customers": "/custom/path" }`). |
-| `PAYMENT_GATEWAY_BASE_URL`, `PAYMENT_GATEWAY_API_KEY` | Endpoint e credenziale del provider pagamenti (Stripe/Nexi/altro). |
-| `PAYMENT_GATEWAY_ENDPOINTS` | Mappa JSON facoltativa per ridefinire le rotte (`create_intent`, `capture`, `refund`). |
-| `TICKETING_BASE_URL`, `TICKETING_API_KEY` | URL e API key del sistema ticketing esterno. |
-| `TICKETING_ACCOUNT_ID` | Identificativo account/istanza da inviare nelle richieste ticket (header `X-Account-Id`). |
-| `TICKETING_ENDPOINTS` | Mappa JSON opzionale per personalizzare gli endpoint (`create`, `update`, `comment`). |
-| `DIGITAL_SIGNATURE_BASE_URL`, `DIGITAL_SIGNATURE_API_KEY` | Endpoint e token del provider di firma digitale (DocuSign, Namirial, ecc.). |
-| `DIGITAL_SIGNATURE_ENDPOINTS` | Mappa JSON opzionale per gli endpoint di firma (`send_request`, `cancel`, `status`). |
 
 ## Funzionalità incluse
 - Login con ruoli (`admin`, `cassiere`), session hardening con `session_regenerate_id`
@@ -56,7 +46,6 @@ Gestionale web minimale per negozio di telefonia, pensato per essere avviato vel
 - Creazione vendite in transazione, scarico automatico ICCID e log in `audit_log`
 - Stampa scontrino HTML pronto per stampa termica
 - Layout responsive con sidebar collassabile (HTML5/CSS/JS vanilla)
-- Integrazione opzionale con ERP/Pagamenti/Ticketing/Firma digitale tramite `IntegrationService`
 
 ## Struttura cartelle
 ```
@@ -77,7 +66,6 @@ logs/              # spazio per log applicativi
 - Password salvate con `password_hash()` / `password_verify()`.
 - I controller sono pensati per essere semplici shim fra viste e servizi.
 - `iccid_example.csv` offre un template pronto per importare gli ICCID.
-- I log delle integrazioni esterne sono salvati in `storage/logs/integrations.log` per audit e troubleshooting.
 
 ## Gestione discrepanze checksum migrazioni
 - Se `php scripts/install.php --upgrade` si blocca per un checksum differente, prima verifica quale valore è registrato in `schema_migrations`.

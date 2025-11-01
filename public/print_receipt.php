@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../app/bootstrap/integrations.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'App\\';
@@ -19,11 +18,7 @@ spl_autoload_register(static function (string $class): void {
 use App\Services\SalesService;
 
 $pdo = Database::getConnection();
-$receiptIntegrationsConfig = isset($GLOBALS['config']['integrations']) && is_array($GLOBALS['config']['integrations'])
-  ? $GLOBALS['config']['integrations']
-  : [];
-$receiptIntegrationService = bootstrapIntegrationService($receiptIntegrationsConfig);
-$salesService = new SalesService($pdo, $receiptIntegrationService);
+$salesService = new SalesService($pdo);
 
 $saleId = isset($_GET['sale_id']) ? (int) $_GET['sale_id'] : 0;
 if ($saleId <= 0) {
