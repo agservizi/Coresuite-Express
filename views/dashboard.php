@@ -199,28 +199,34 @@ if (is_array($currentUser)) {
             <h2>Dashboard</h2>
             <p>Comando centralizzato su vendite, clientela, campagne e compliance.</p>
         </div>
-        <?php if ($welcomeTitle !== null): ?>
+        <div class="dashboard-header-grid">
             <div class="dashboard-welcome" role="status">
-                <div class="dashboard-welcome__icon" aria-hidden="true">👋</div>
+                <div class="dashboard-welcome__icon" aria-hidden="true">
+                    <?= htmlspecialchars($welcomeTitle !== null ? '👋' : '📊') ?>
+                </div>
                 <div class="dashboard-welcome__content">
-                    <p class="dashboard-welcome__title"><?= htmlspecialchars($welcomeTitle) ?></p>
-                    <?php if ($welcomeSubtitle !== ''): ?>
-                        <p class="dashboard-welcome__subtitle"><?= htmlspecialchars($welcomeSubtitle) ?></p>
+                    <p class="dashboard-welcome__title">
+                        <?= htmlspecialchars($welcomeTitle ?? 'Dashboard operativa') ?>
+                    </p>
+                    <?php if (($welcomeSubtitle !== '') || $welcomeTitle === null): ?>
+                        <p class="dashboard-welcome__subtitle">
+                            <?= htmlspecialchars($welcomeSubtitle !== '' ? $welcomeSubtitle : 'Seleziona il periodo per personalizzare le analisi.') ?>
+                        </p>
                     <?php endif; ?>
                 </div>
             </div>
-        <?php endif; ?>
-        <div class="dashboard-period-card">
-            <div class="dashboard-period-card__header">
-                <span class="dashboard-period-card__title">Periodo di analisi</span>
-                <span class="dashboard-period-card__subtitle">Scegli l'intervallo temporale per tutte le metriche</span>
-            </div>
-            <div class="dashboard-period-card__actions">
-                <?php foreach ($periodLabels as $key => $label): ?>
-                    <a class="btn btn--ghost<?= $selectedPeriod === $key ? ' is-active' : '' ?>" href="index.php?page=dashboard&period=<?= $key ?>">
-                        <?= htmlspecialchars($label) ?>
-                    </a>
-                <?php endforeach; ?>
+            <div class="dashboard-period-card">
+                <div class="dashboard-period-card__header">
+                    <span class="dashboard-period-card__title">Periodo di analisi</span>
+                    <span class="dashboard-period-card__subtitle">Scegli l'intervallo temporale per tutte le metriche</span>
+                </div>
+                <div class="dashboard-period-card__actions">
+                    <?php foreach ($periodLabels as $key => $label): ?>
+                        <a class="btn btn--ghost<?= $selectedPeriod === $key ? ' is-active' : '' ?>" href="index.php?page=dashboard&period=<?= $key ?>">
+                            <?= htmlspecialchars($label) ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
             </div>
         </div>
         <?php if ($nextSteps !== []): ?>

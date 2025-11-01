@@ -268,12 +268,14 @@ body[data-sidebar-collapsed="true"] .topbar{padding-left:24px;padding-right:24px
 .dashboard-panel--wide{grid-column:span 2;}
 .dashboard-panel__header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
 .dashboard-panel__meta{font-size:13px;color:#64748b;}
-.dashboard-period-card{margin-top:24px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;background:#fff;border-radius:12px;padding:18px 20px;box-shadow:0 2px 6px rgba(15,23,42,.08);border:1px solid #e2e8f0;}
+.dashboard-header-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;margin-top:16px;align-items:stretch;}
+.dashboard-header-grid>*{min-width:0;}
+.dashboard-period-card{display:flex;flex-direction:column;gap:14px;background:#fff;border-radius:12px;padding:18px 20px;box-shadow:0 2px 6px rgba(15,23,42,.08);border:1px solid #e2e8f0;}
 .dashboard-period-card__header{display:flex;flex-direction:column;gap:2px;min-width:220px;}
 .dashboard-period-card__title{font-size:15px;font-weight:600;color:#1f2937;}
 .dashboard-period-card__subtitle{font-size:12px;color:#64748b;}
 .dashboard-period-card__actions{display:flex;flex-wrap:wrap;gap:10px;}
-.dashboard-welcome{margin-top:16px;display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.08);}
+.dashboard-welcome{display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.08);}
 .dashboard-welcome__icon{font-size:28px;line-height:1;}
 .dashboard-welcome__content{display:flex;flex-direction:column;gap:4px;min-width:0;}
 .dashboard-welcome__title{font-size:17px;font-weight:700;color:#0f172a;margin:0;}
