@@ -4,10 +4,14 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Services\OfferBrochureService;
+use App\Services\OfferDesignService;
 
 final class OfferBrochureController
 {
-    public function __construct(private OfferBrochureService $brochureService)
+    public function __construct(
+        private OfferBrochureService $brochureService,
+        private OfferDesignService $designService
+    )
     {
     }
 
@@ -43,7 +47,7 @@ final class OfferBrochureController
     /**
      * @return array<string, mixed>
      */
-    public function viewData(?array $oldInput = null): array
+    public function viewData(?array $oldInput = null, ?int $userId = null): array
     {
         $defaults = $this->formDefaults();
         $values = $defaults;
@@ -61,6 +65,59 @@ final class OfferBrochureController
             'formats' => OfferBrochureService::FORMATS,
             'orientations' => OfferBrochureService::ORIENTATIONS,
             'themes' => OfferBrochureService::THEMES,
+            'designs' => $userId !== null ? $this->designService->listForUser($userId) : [],
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listDesigns(int $userId): array
+    {
+        return $this->designService->listForUser($userId);
+    }
+
+    public function loadDesign(int $userId, string $designId): ?array
+    {
+        return $this->designService->findByPublicId($designId, $userId);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{success:bool, message:string, errors?:array<int,string>, design?:array<string,mixed>}
+     */
+    public function saveDesign(int $userId, array $payload): array
+    {
+        return $this->designService->save($payload, $userId);
+    }
+
+    public function deleteDesign(int $userId, string $designId): array
+    {
+        return $this->designService->delete($designId, $userId);
+    }
+
+    public function markDesignUsed(int $userId, string $designId): void
+    {
+        $this->designService->touchLastUsed($designId, $userId);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array{filename: string, content: string, mime: string}
+     */
+    public function generateFromCanvas(array $payload): array
+    {
+        $html = (string) ($payload['html'] ?? '');
+        $css = (string) ($payload['css'] ?? '');
+        $format = isset($payload['format']) ? (string) $payload['format'] : 'A4';
+        $orientation = isset($payload['orientation']) ? (string) $payload['orientation'] : 'portrait';
+        $meta = isset($payload['meta']) && is_array($payload['meta']) ? $payload['meta'] : [];
+
+        return $this->brochureService->generateFromCustomLayout($html, [
+            'css' => $css,
+            'format' => $format,
+            'orientation' => $orientation,
+            'meta' => $meta,
+        ]);
     }
 }

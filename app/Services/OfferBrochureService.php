@@ -96,6 +96,64 @@ final class OfferBrochureService
             'hero_image' => $heroImageUrl,
         ]);
 
+        return $this->renderPdfDocument($html, $format, $orientation, 'brochure');
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array{filename: string, content: string, mime: string}
+     */
+    public function generateFromCustomLayout(string $html, array $options = []): array
+    {
+        $trimmedHtml = trim($html);
+        if ($trimmedHtml === '') {
+            $trimmedHtml = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Helvetica,Arial,sans-serif;font-size:32px;color:#1f2937;">Nessun contenuto disponibile</div>';
+        }
+
+        $css = isset($options['css']) ? (string) $options['css'] : '';
+        $format = isset($options['format']) ? strtoupper((string) $options['format']) : 'A4';
+        if (!isset(self::FORMATS[$format])) {
+            $format = 'A4';
+        }
+        $orientation = isset($options['orientation']) ? strtolower((string) $options['orientation']) : 'portrait';
+        if (!isset(self::ORIENTATIONS[$orientation])) {
+            $orientation = 'portrait';
+        }
+        $meta = isset($options['meta']) && is_array($options['meta']) ? $options['meta'] : [];
+        $documentTitle = isset($meta['title']) && is_string($meta['title']) && $meta['title'] !== ''
+            ? $meta['title']
+            : 'Brochure personalizzata';
+        $filenamePrefix = isset($meta['filename_prefix']) && is_string($meta['filename_prefix']) && $meta['filename_prefix'] !== ''
+            ? preg_replace('/[^a-zA-Z0-9_-]+/', '_', $meta['filename_prefix'])
+            : 'brochure_canvas';
+
+        $stylesheet = $css !== '' ? "\n" . $css : '';
+        $documentHtml = <<<HTML
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>{$this->escape($documentTitle)}</title>
+<style>
+@page { margin: 0; }
+body { margin: 0; }
+{$stylesheet}
+</style>
+</head>
+<body>
+{$trimmedHtml}
+</body>
+</html>
+HTML;
+
+        return $this->renderPdfDocument($documentHtml, $format, $orientation, $filenamePrefix);
+    }
+
+    /**
+     * @return array{filename: string, content: string, mime: string}
+     */
+    private function renderPdfDocument(string $html, string $format, string $orientation, string $filenamePrefix): array
+    {
         $options = new Options();
         $options->set('defaultFont', 'Helvetica');
         $options->set('isRemoteEnabled', true);
@@ -107,7 +165,7 @@ final class OfferBrochureService
         $dompdf->render();
 
         $pdfOutput = $dompdf->output();
-        $filename = sprintf('brochure_%s.pdf', date('Ymd_His'));
+        $filename = sprintf('%s_%s.pdf', $filenamePrefix, date('Ymd_His'));
 
         return [
             'filename' => $filename,
