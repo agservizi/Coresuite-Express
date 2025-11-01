@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 session_start();
 
+$autoloadPath = dirname(__DIR__) . '/vendor/autoload.php';
+if (is_file($autoloadPath)) {
+    require_once $autoloadPath;
+}
+
 /**
  * @param array<string, mixed>|string $toast
  */
@@ -161,6 +166,7 @@ use App\Controllers\SalesController;
 use App\Controllers\SupportRequestController;
 use App\Controllers\SsoController;
 use App\Controllers\PdaImportController;
+use App\Controllers\OfferBrochureController;
 use App\Services\AuthService;
 use App\Services\CustomerService;
 use App\Services\DiscountCampaignService;
@@ -178,6 +184,7 @@ use App\Services\NotificationDispatcher;
 use App\Services\SystemNotificationService;
 use App\Services\SsoService;
 use App\Services\PdaImportService;
+use App\Services\OfferBrochureService;
 
 $pdo = Database::getConnection();
 
@@ -239,6 +246,7 @@ $saleNotificationService = new SaleNotificationService(
     $saleNotificationLog,
     $systemNotificationService
 );
+$offerBrochureService = new OfferBrochureService();
 $ssoConfig = $GLOBALS['config']['sso'] ?? [];
 $ssoService = new SsoService($pdo, is_array($ssoConfig) ? $ssoConfig : []);
 
@@ -253,6 +261,7 @@ $salesController = new SalesController($salesService, $discountCampaignService, 
 $supportRequestController = new SupportRequestController($supportRequestService);
 $ssoController = new SsoController($ssoService);
 $pdaImportController = new PdaImportController($pdaImportService);
+$offerBrochureController = new OfferBrochureController($offerBrochureService);
 
 $page = $_GET['page'] ?? 'dashboard';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -601,6 +610,38 @@ switch ($page) {
             'nextSteps' => $nextSteps,
             'operationalPulse' => $operationalPulse,
         ]);
+        break;
+
+    case 'offers_designer':
+        if ($method === 'GET' && (isset($_GET['reset']) && $_GET['reset'] === '1')) {
+            unset($_SESSION['offer_designer_last_input']);
+        }
+
+        if ($method === 'POST' && ($_POST['action'] ?? '') === 'generate_brochure') {
+            $postInput = $_POST;
+            $persistable = [];
+            $keys = ['title', 'subtitle', 'price', 'description', 'cta', 'contacts', 'highlights', 'hero_image', 'format', 'orientation', 'theme'];
+            foreach ($keys as $key) {
+                if (isset($postInput[$key]) && is_string($postInput[$key])) {
+                    $persistable[$key] = $postInput[$key];
+                }
+            }
+            if ($persistable !== []) {
+                $_SESSION['offer_designer_last_input'] = $persistable;
+            }
+
+            $pdfDocument = $offerBrochureController->generatePdf($postInput);
+            header('Content-Type: ' . $pdfDocument['mime']);
+            header('Content-Disposition: attachment; filename="' . $pdfDocument['filename'] . '"');
+            header('Content-Length: ' . strlen($pdfDocument['content']));
+            echo $pdfDocument['content'];
+            exit;
+        }
+
+        $persistedInput = $_SESSION['offer_designer_last_input'] ?? null;
+        $viewData = $offerBrochureController->viewData(is_array($persistedInput) ? $persistedInput : null);
+        $viewData['currentUser'] = $currentUser;
+        render('offers_brochure', $viewData);
         break;
 
     case 'reports':
