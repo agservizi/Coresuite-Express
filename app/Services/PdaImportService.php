@@ -444,51 +444,56 @@ final class PdaImportService
         $msisdnList = array_map(fn (?string $value) => $this->normalizeMsisdn($value), $this->matchMultiple($text, self::FIELD_ALIASES['msisdn']));
         $prices = array_map(fn (?string $value) => $this->normalizePrice($value), $this->matchMultiple($text, self::FIELD_ALIASES['price']));
 
-        $fastwebOffer = $isFastweb ? $this->extractFastwebOfferDetails($text) : ['plan' => null, 'price' => null];
-
         $items = [];
-        $rowCount = max(count($iccids), count($plans), count($msisdnList));
-        $fastwebSeen = [];
         $fastwebDuplicates = 0;
-        for ($i = 0; $i < $rowCount; $i++) {
-            $iccid = $iccids[$i] ?? $iccids[0] ?? null;
-            $plan = $plans[$i] ?? $plans[0] ?? null;
-            $msisdn = $msisdnList[$i] ?? $msisdnList[0] ?? null;
-            $price = $prices[$i] ?? $prices[0] ?? null;
 
-            if ($iccid === null && $plan === null && $msisdn === null) {
-                continue;
-            }
+        if ($isFastweb) {
+            $fastwebOffer = $this->extractFastwebOfferDetails($text);
+            $uniqueIccids = [];
 
-            $normalizedIccid = $this->normalizeIccid($iccid);
-
-            if ($isFastweb) {
-                if ($normalizedIccid === null) {
+            foreach ($iccids as $rawIccid) {
+                $normalized = $this->normalizeIccid($rawIccid);
+                if ($normalized === null) {
                     continue;
                 }
-                if (isset($fastwebSeen[$normalizedIccid])) {
+                if (isset($uniqueIccids[$normalized])) {
                     $fastwebDuplicates++;
                     continue;
                 }
-                $fastwebSeen[$normalizedIccid] = true;
-
-                if ($plan === null || $plan === '' || stripos((string) $plan, 'termini') !== false || stripos((string) $plan, 'condizioni') !== false) {
-                    if (is_string($fastwebOffer['plan'])) {
-                        $plan = $fastwebOffer['plan'];
-                    }
-                }
-
-                if (($price === null || $price <= 0) && is_float($fastwebOffer['price'])) {
-                    $price = $fastwebOffer['price'];
-                }
+                $uniqueIccids[$normalized] = $normalized;
             }
 
-            $items[] = [
-                'iccid' => $normalizedIccid,
-                'plan' => $plan,
-                'msisdn' => $msisdn,
-                'price' => $price,
-            ];
+            $preferredPlan = $this->resolveFastwebPlan($fastwebOffer['plan'], $plans);
+            $preferredPrice = $this->resolveFastwebPrice($fastwebOffer['price'], $prices);
+            $preferredMsisdn = $this->firstNonNull($msisdnList);
+
+            foreach (array_values($uniqueIccids) as $normalizedIccid) {
+                $items[] = [
+                    'iccid' => $normalizedIccid,
+                    'plan' => $preferredPlan,
+                    'msisdn' => $preferredMsisdn,
+                    'price' => $preferredPrice,
+                ];
+            }
+        } else {
+            $rowCount = max(count($iccids), count($plans), count($msisdnList));
+            for ($i = 0; $i < $rowCount; $i++) {
+                $iccid = $iccids[$i] ?? $iccids[0] ?? null;
+                $plan = $plans[$i] ?? $plans[0] ?? null;
+                $msisdn = $msisdnList[$i] ?? $msisdnList[0] ?? null;
+                $price = $prices[$i] ?? $prices[0] ?? null;
+
+                if ($iccid === null && $plan === null && $msisdn === null) {
+                    continue;
+                }
+
+                $items[] = [
+                    'iccid' => $this->normalizeIccid($iccid),
+                    'plan' => $plan,
+                    'msisdn' => $msisdn,
+                    'price' => $price,
+                ];
+            }
         }
 
         if ($items === []) {
@@ -805,6 +810,84 @@ final class PdaImportService
         }
 
         return preg_replace('/\s{2,}/', ' ', $candidate);
+    }
+
+    private function resolveFastwebPlan(?string $offerPlan, array $plans): ?string
+    {
+        $candidates = [];
+
+        if ($offerPlan !== null) {
+            $clean = $this->cleanFastwebPlanCandidate($offerPlan);
+            if ($clean !== null) {
+                if (!$this->isFastwebGenericPlan($clean)) {
+                    return $clean;
+                }
+                $candidates[] = $clean;
+            }
+        }
+
+        foreach ($plans as $plan) {
+            if (!is_string($plan)) {
+                continue;
+            }
+            $clean = $this->cleanFastwebPlanCandidate($plan);
+            if ($clean === null) {
+                continue;
+            }
+            if (!$this->isFastwebGenericPlan($clean)) {
+                return $clean;
+            }
+            $candidates[] = $clean;
+        }
+
+        return $candidates[0] ?? null;
+    }
+
+    private function resolveFastwebPrice(?float $offerPrice, array $prices): ?float
+    {
+        if ($offerPrice !== null && $offerPrice > 0) {
+            return round($offerPrice, 2);
+        }
+
+        foreach ($prices as $price) {
+            if (is_float($price) && $price > 0) {
+                return round($price, 2);
+            }
+        }
+
+        return null;
+    }
+
+    private function firstNonNull(array $values): mixed
+    {
+        foreach ($values as $value) {
+            if ($value !== null && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function isFastwebGenericPlan(string $plan): bool
+    {
+        $normalized = strtolower($plan);
+        $genericTokens = [
+            'offerta residenziale',
+            'offerta business',
+            'termini e condizioni',
+            'condizioni generali',
+            'scheda cliente',
+            'modulo',
+        ];
+
+        foreach ($genericTokens as $token) {
+            if (str_contains($normalized, $token)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
