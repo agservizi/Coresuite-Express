@@ -404,6 +404,11 @@ body[data-sidebar-collapsed="true"] .topbar{padding-left:24px;padding-right:24px
 .form__group input,.form__group select,.form__group textarea{padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;}
 .form__group textarea{min-height:100px;resize:vertical;}
 .form__group small{color:#64748b;font-size:12px;}
+.form__group--file .file-upload{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.file-upload{position:relative;}
+.file-upload__input{position:absolute;opacity:0;pointer-events:none;width:0.1px;height:0.1px;overflow:hidden;}
+.file-upload__button{white-space:nowrap;flex-shrink:0;}
+.file-upload__name{font-size:13px;color:#475569;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;display:block;flex:1 1 auto;max-width:100%;}
 .form__inline{display:flex;gap:8px;align-items:center;}
 .form__inline input{flex:1;}
 .form__inline .btn{width:auto;flex-shrink:0;}

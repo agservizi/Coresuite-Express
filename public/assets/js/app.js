@@ -1182,6 +1182,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupLiveRefreshContainers();
   setupDraggableDashboard();
+  setupFileUploads();
   setupAccordions();
 
   if (typeof window.PdaPrefill === 'object' && window.PdaPrefill) {
@@ -2911,6 +2912,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return closest;
       }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
     }
+  }
+
+  function setupFileUploads() {
+    const widgets = document.querySelectorAll('[data-file-upload]');
+    widgets.forEach(widget => {
+      const input = widget.querySelector('input[type="file"]');
+      const nameTarget = widget.querySelector('[data-file-upload-name]');
+      if (!input || !nameTarget) {
+        return;
+      }
+
+      const placeholder = nameTarget.getAttribute('data-placeholder') || 'Nessun file selezionato';
+
+      const updateLabel = () => {
+        const files = input.files;
+        const nextLabel = files && files.length > 0 ? files[0].name : placeholder;
+        nameTarget.textContent = nextLabel;
+      };
+
+      const trigger = widget.querySelector('[data-file-upload-trigger]');
+      if (trigger) {
+        trigger.addEventListener('click', event => {
+          event.preventDefault();
+          input.click();
+        });
+      }
+
+      input.addEventListener('change', updateLabel);
+      input.addEventListener('blur', updateLabel);
+      updateLabel();
+    });
   }
 
   function setupAccordions() {

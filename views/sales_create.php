@@ -88,9 +88,13 @@ $prefillCustomer = [
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="form__group">
+                            <div class="form__group form__group--file">
                                 <label for="pda_file">File PDA</label>
-                                <input type="file" name="pda_file" id="pda_file" accept=".pdf,.txt,.csv,.json" required>
+                                <div class="file-upload" data-file-upload>
+                                    <input class="file-upload__input" type="file" name="pda_file" id="pda_file" accept=".pdf,.txt,.csv,.json" required>
+                                    <button type="button" class="btn btn--secondary file-upload__button" data-file-upload-trigger>Scegli file</button>
+                                    <span class="file-upload__name" data-file-upload-name data-placeholder="Nessun file selezionato">Nessun file selezionato</span>
+                                </div>
                                 <small class="muted">Formati supportati: PDF, TXT, CSV, JSON. Iliad escluso.</small>
                             </div>
                         </div>
