@@ -464,6 +464,12 @@ final class PdaImportService
             }
 
             $preferredPlan = $this->resolveFastwebPlan($fastwebOffer['plan'], $plans);
+            if ($preferredPlan === null && isset($fastwebOffer['plan'])) {
+                $rawPlan = is_string($fastwebOffer['plan']) ? trim((string) $fastwebOffer['plan']) : '';
+                if ($rawPlan !== '') {
+                    $preferredPlan = $this->cleanFastwebPlanCandidate($rawPlan) ?? $rawPlan;
+                }
+            }
             $preferredPrice = $this->resolveFastwebPrice($fastwebOffer['price'], $prices);
             $preferredMsisdn = $this->firstNonNull($msisdnList);
 
@@ -473,6 +479,8 @@ final class PdaImportService
                     'plan' => $preferredPlan,
                     'msisdn' => $preferredMsisdn,
                     'price' => $preferredPrice,
+                    'offer_hint' => $fastwebOffer['plan'] ?? null,
+                    'offer_price_hint' => $fastwebOffer['price'] ?? null,
                 ];
             }
         } else {
@@ -492,6 +500,8 @@ final class PdaImportService
                     'plan' => $plan,
                     'msisdn' => $msisdn,
                     'price' => $price,
+                    'offer_hint' => $plan,
+                    'offer_price_hint' => $price,
                 ];
             }
         }
@@ -650,8 +660,33 @@ final class PdaImportService
         foreach ($items as $item) {
             $iccid = $this->normalizeIccid($item['iccid'] ?? null);
             $plan = $this->stringOrNull($item['plan'] ?? null);
+            $offerHint = $this->stringOrNull($item['offer_hint'] ?? null);
             $msisdn = $this->normalizeMsisdn($item['msisdn'] ?? null);
             $price = $this->normalizePrice($item['price'] ?? null);
+
+            if ($price === null && isset($item['offer_price_hint'])) {
+                $hintPrice = $this->normalizePrice($item['offer_price_hint']);
+                if ($hintPrice !== null) {
+                    $price = $hintPrice;
+                }
+            }
+
+            $offerMatch = $this->matchActiveOffer($providerId, [$plan, $offerHint], $price);
+            $offerId = null;
+            if ($offerMatch !== null) {
+                if (isset($offerMatch['title']) && is_string($offerMatch['title']) && $offerMatch['title'] !== '') {
+                    $plan = $offerMatch['title'];
+                }
+                if (($price === null || $price <= 0.0) && isset($offerMatch['price'])) {
+                    $matchedPrice = $this->normalizePrice($offerMatch['price']);
+                    if ($matchedPrice !== null) {
+                        $price = $matchedPrice;
+                    }
+                }
+                if (isset($offerMatch['id'])) {
+                    $offerId = (int) $offerMatch['id'];
+                }
+            }
 
             $descriptionParts = [];
             if ($plan !== null) {
@@ -685,6 +720,8 @@ final class PdaImportService
                 'description' => $description,
                 'price' => $price,
                 'quantity' => 1,
+                'offer_id' => $offerId,
+                'offer_title' => $plan,
             ];
         }
 
@@ -879,6 +916,7 @@ final class PdaImportService
             'condizioni generali',
             'scheda cliente',
             'modulo',
+            'costi mensili',
         ];
 
         foreach ($genericTokens as $token) {
@@ -888,6 +926,148 @@ final class PdaImportService
         }
 
         return false;
+    }
+
+    private function matchActiveOffer(int $providerId, array $candidatePlans, ?float $price): ?array
+    {
+        $normalizedCandidates = [];
+        foreach ($candidatePlans as $candidate) {
+            if (!is_string($candidate)) {
+                continue;
+            }
+            $trimmed = trim($candidate);
+            if ($trimmed === '') {
+                continue;
+            }
+            $normalized = $this->normalizeOfferTitle($trimmed);
+            if ($normalized !== '') {
+                $normalizedCandidates[$normalized] = $trimmed;
+            }
+        }
+
+        $needsPriceMatch = $price !== null && $price > 0.0;
+        if ($normalizedCandidates === [] && !$needsPriceMatch) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, title, price FROM operator_offers
+             WHERE provider_id = :provider_id
+               AND status = "Active"
+               AND (valid_from IS NULL OR valid_from <= CURRENT_DATE())
+               AND (valid_to IS NULL OR valid_to >= CURRENT_DATE())'
+        );
+        $stmt->execute([':provider_id' => $providerId]);
+        $offers = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $bestOffer = null;
+        $bestScore = 0.0;
+        $priceMatch = $price !== null ? (float) $price : null;
+
+        foreach ($offers as $offer) {
+            $title = isset($offer['title']) ? (string) $offer['title'] : '';
+            if ($title === '') {
+                continue;
+            }
+            $normalizedTitle = $this->normalizeOfferTitle($title);
+            if ($normalizedTitle === '') {
+                continue;
+            }
+
+            foreach ($normalizedCandidates as $candidate => $original) {
+                if ($candidate === '') {
+                    continue;
+                }
+                if ($normalizedTitle === $candidate) {
+                    return [
+                        'id' => (int) ($offer['id'] ?? 0),
+                        'title' => $title,
+                        'price' => isset($offer['price']) ? (float) $offer['price'] : null,
+                    ];
+                }
+                if (str_contains($normalizedTitle, $candidate) || str_contains($candidate, $normalizedTitle)) {
+                    if ($bestScore < 0.9) {
+                        $bestOffer = $offer;
+                        $bestScore = 0.9;
+                    }
+                }
+            }
+
+            if ($priceMatch !== null && isset($offer['price'])) {
+                $offerPrice = $this->normalizePrice($offer['price']);
+                if ($offerPrice !== null && abs($offerPrice - $priceMatch) < 0.01 && $bestScore < 0.6) {
+                    $bestOffer = $offer;
+                    $bestScore = 0.6;
+                }
+            }
+        }
+
+        if ($bestOffer !== null) {
+            return [
+                'id' => (int) ($bestOffer['id'] ?? 0),
+                'title' => (string) ($bestOffer['title'] ?? ''),
+                'price' => isset($bestOffer['price']) ? (float) $bestOffer['price'] : null,
+            ];
+        }
+
+        if ($normalizedCandidates === []) {
+            return null;
+        }
+
+        $firstOriginal = reset($normalizedCandidates);
+        if (!is_string($firstOriginal) || $firstOriginal === '') {
+            return null;
+        }
+
+        try {
+            $created = $this->createOperatorOffer($providerId, $firstOriginal, $price);
+            if ($created !== null) {
+                return $created;
+            }
+        } catch (\Throwable $exception) {
+            // Ignore offer creation failures; fallback to null match.
+        }
+
+        return null;
+    }
+
+    private function normalizeOfferTitle(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        $normalized = preg_replace('/[^a-z0-9]+/u', '', $normalized) ?? $normalized;
+
+        return $normalized;
+    }
+
+    private function createOperatorOffer(int $providerId, string $title, ?float $price): ?array
+    {
+        $trimmedTitle = trim($title);
+        if ($trimmedTitle === '') {
+            return null;
+        }
+
+        $amount = $price !== null && $price > 0 ? round($price, 2) : 0.00;
+
+        $insert = $this->pdo->prepare(
+            'INSERT INTO operator_offers (provider_id, title, description, price, status, valid_from, valid_to)
+             VALUES (:provider_id, :title, NULL, :price, "Active", NULL, NULL)'
+        );
+        $insert->execute([
+            ':provider_id' => $providerId,
+            ':title' => $trimmedTitle,
+            ':price' => $amount,
+        ]);
+
+        $offerId = (int) $this->pdo->lastInsertId();
+        if ($offerId <= 0) {
+            return null;
+        }
+
+        return [
+            'id' => $offerId,
+            'title' => $trimmedTitle,
+            'price' => $amount,
+        ];
     }
 
     /**

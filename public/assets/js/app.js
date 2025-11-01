@@ -1280,15 +1280,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const iccidId = typeof item.iccid_id === 'number' ? item.iccid_id : null;
     const iccidCode = typeof item.iccid_code === 'string' ? item.iccid_code : null;
-    const description = typeof item.description === 'string' ? item.description : '';
-    const priceValue = typeof item.price === 'number' && Number.isFinite(item.price) ? item.price : null;
+    let description = typeof item.description === 'string' ? item.description : '';
+    let priceValue = typeof item.price === 'number' && Number.isFinite(item.price) ? item.price : null;
     const quantityValue = typeof item.quantity === 'number' && Number.isFinite(item.quantity) ? Math.max(1, Math.round(item.quantity)) : 1;
+    const offerId = typeof item.offer_id === 'number' ? item.offer_id : null;
+    const offerTitle = typeof item.offer_title === 'string' ? item.offer_title : null;
 
     const select = row.querySelector('select[name="item_iccid[]"]');
     const hidden = row.querySelector('input[name="item_iccid_code[]"]');
     const descInput = row.querySelector('input[name="item_description[]"]');
     const priceInput = row.querySelector('input[name="item_price[]"]');
     const qtyInput = row.querySelector('input[name="item_quantity[]"]');
+
+    let offerOption = null;
+    if (offerId !== null && offerSelect instanceof HTMLSelectElement) {
+      offerOption = offerSelect.querySelector(`option[value="${offerId}"]`);
+    }
+
+    if (offerOption) {
+      const titleFromOption = offerOption.dataset.title || (offerOption.textContent ? offerOption.textContent.trim() : '');
+      const priceFromOption = parseFloat(offerOption.dataset.price || '');
+      const normalizedDescription = description.toLowerCase();
+      if (titleFromOption && (!description || normalizedDescription === 'attivazione sim')) {
+        description = titleFromOption;
+      }
+      if (Number.isFinite(priceFromOption) && (priceValue === null || priceValue <= 0)) {
+        priceValue = priceFromOption;
+      }
+      row.dataset.offerId = String(offerId);
+      if (offerOption.dataset.provider) {
+        row.dataset.offerProvider = offerOption.dataset.provider;
+      } else {
+        delete row.dataset.offerProvider;
+      }
+    } else if (offerTitle) {
+      const normalizedDescription = description.toLowerCase();
+      if (!description || normalizedDescription === 'attivazione sim') {
+        description = offerTitle;
+      }
+      if (offerId !== null) {
+        row.dataset.offerId = String(offerId);
+      } else {
+        delete row.dataset.offerId;
+      }
+    } else {
+      delete row.dataset.offerId;
+      delete row.dataset.offerProvider;
+    }
 
     if (select instanceof HTMLSelectElement) {
       if (iccidId !== null) {
@@ -1309,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (priceInput instanceof HTMLInputElement) {
-      if (priceValue !== null) {
+      if (priceValue !== null && Number.isFinite(priceValue)) {
         priceInput.value = priceValue.toFixed(2);
       }
       priceInput.required = iccidId !== null;
