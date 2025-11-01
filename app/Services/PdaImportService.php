@@ -444,6 +444,8 @@ final class PdaImportService
         $msisdnList = array_map(fn (?string $value) => $this->normalizeMsisdn($value), $this->matchMultiple($text, self::FIELD_ALIASES['msisdn']));
         $prices = array_map(fn (?string $value) => $this->normalizePrice($value), $this->matchMultiple($text, self::FIELD_ALIASES['price']));
 
+        $fastwebOffer = $isFastweb ? $this->extractFastwebOfferDetails($text) : ['plan' => null, 'price' => null];
+
         $items = [];
         $rowCount = max(count($iccids), count($plans), count($msisdnList));
         $fastwebSeen = [];
@@ -469,6 +471,16 @@ final class PdaImportService
                     continue;
                 }
                 $fastwebSeen[$normalizedIccid] = true;
+
+                if ($plan === null || $plan === '' || stripos((string) $plan, 'termini') !== false || stripos((string) $plan, 'condizioni') !== false) {
+                    if (is_string($fastwebOffer['plan'])) {
+                        $plan = $fastwebOffer['plan'];
+                    }
+                }
+
+                if (($price === null || $price <= 0) && is_float($fastwebOffer['price'])) {
+                    $price = $fastwebOffer['price'];
+                }
             }
 
             $items[] = [
@@ -702,6 +714,64 @@ final class PdaImportService
         return null;
     }
 
+    /**
+     * @return array{plan:?string,price:?float}
+     */
+    private function extractFastwebOfferDetails(string $text): array
+    {
+        $plan = null;
+        $price = null;
+
+        $planPatterns = [
+            '/Dettaglio\s+costi\s*[:\-]?\s*([A-Z0-9][^\r\n]+)/i',
+            '/Dettaglio\s+costi\s*(?:\r?\n)+\s*([A-Z0-9][^\r\n]+)/i',
+            '/\bFastweb\s+Mobile\s+[A-Za-z0-9 ]{3,60}/i',
+        ];
+
+        foreach ($planPatterns as $pattern) {
+            if (preg_match($pattern, $text, $matches)) {
+                $candidate = $this->cleanFastwebPlanCandidate($matches[1] ?? $matches[0] ?? '');
+                if ($candidate !== null) {
+                    $plan = $candidate;
+                    break;
+                }
+            }
+        }
+
+        $pricePatterns = [
+            '/Contributo\s+SIM(?:\/eSIM)?\s+([0-9]+(?:[\.,][0-9]{1,2})?)/i',
+            '/Prima\s+ricarica[^\r\n]*?([0-9]+(?:[\.,][0-9]{1,2})?)\s*€/i',
+        ];
+
+        foreach ($pricePatterns as $pattern) {
+            if (preg_match($pattern, $text, $matches)) {
+                $normalized = $this->normalizePrice($matches[1] ?? null);
+                if ($normalized !== null) {
+                    $price = $normalized;
+                    break;
+                }
+            }
+        }
+
+        if ($price === null && $plan !== null) {
+            $planPos = stripos($text, $plan);
+            if ($planPos !== false) {
+                $snippet = substr($text, $planPos, 200);
+                if (is_string($snippet) && preg_match('/([0-9]+(?:[\.,][0-9]{1,2})?)\s*€/', $snippet, $m)) {
+                    $normalized = $this->normalizePrice($m[1]);
+                    if ($normalized !== null) {
+                        $price = $normalized;
+                    }
+                }
+            }
+        }
+
+        return [
+            'plan' => $plan,
+            'price' => $price,
+        ];
+    }
+
     private function cleanFastwebNameCandidate(mixed $value): ?string
     {
         if (!is_string($value)) {
@@ -718,6 +788,23 @@ final class PdaImportService
         $candidate = trim($candidate, " \t.:,;-");
 
         return $candidate !== '' ? $candidate : null;
+    }
+
+    private function cleanFastwebPlanCandidate(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $candidate = trim($value);
+        $candidate = preg_replace('/\b(?:Prima\s+ricarica|Contributo\s+SIM\/eSIM|Contributo\s+SIM)\b.*$/i', '', $candidate) ?? $candidate;
+        $candidate = trim($candidate, " \t.:,;-");
+
+        if ($candidate === '' || strlen($candidate) < 4) {
+            return null;
+        }
+
+        return preg_replace('/\s{2,}/', ' ', $candidate);
     }
 
     /**
