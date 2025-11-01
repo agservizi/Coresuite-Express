@@ -685,28 +685,39 @@ final class PdaImportService
     private function extractFastwebCustomerName(string $text): ?string
     {
         $patterns = [
-            '/Proposta\s+di\s+abbonamento\s*[:\-]?\s*(.+)/i',
-            '/Proposta\s+di\s+abbonamento\s*(?:\n|\r\n)(.+)/i',
+            '/Proposta\s+di\s+Abbonamento[\s\S]{0,120}?Cliente\s*[:\-]\s*([^\r\n]+)/i',
+            '/Cliente\s*[:\-]\s*([^\r\n]+)/i',
+            '/Proposta\s+di\s+Abbonamento\s*(?:\r?\n){1,2}([^\r\n]+)/i',
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $matches)) {
-                $candidate = trim((string) ($matches[1] ?? ''));
-                if ($candidate === '') {
-                    continue;
-                }
-
-                $candidate = preg_split('/\r?\n/', $candidate)[0] ?? $candidate;
-                $candidate = preg_replace('/\b(?:Codice\s+Fiscale|CF|P\.IVA|Mobile\s+Number\s+Portability)\b.*$/i', '', $candidate) ?? $candidate;
-                $candidate = trim($candidate, " \t.:,;-");
-
-                if ($candidate !== '') {
+                $candidate = $this->cleanFastwebNameCandidate($matches[1] ?? '');
+                if ($candidate !== null) {
                     return $candidate;
                 }
             }
         }
 
         return null;
+    }
+
+    private function cleanFastwebNameCandidate(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $candidate = trim($value);
+        if ($candidate === '') {
+            return null;
+        }
+
+        $candidate = preg_split('/\b(?:Offerta|Codice\s+Preventivo|Codice\s+Venditore|Numero\s+Cliente|Mobile\s+Number\s+Portability)\b/i', $candidate)[0] ?? $candidate;
+        $candidate = preg_replace('/\b(?:Cliente|Intestatario)\b\s*[:\-]?/i', '', $candidate) ?? $candidate;
+        $candidate = trim($candidate, " \t.:,;-");
+
+        return $candidate !== '' ? $candidate : null;
     }
 
     /**
