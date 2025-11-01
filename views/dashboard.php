@@ -14,6 +14,7 @@ declare(strict_types=1);
  * @var array<int, string> $lowStockProducts
  * @var array<string, mixed> $operationalPulse
  * @var string $selectedPeriod
+ * @var array<string, mixed>|null $currentUser
  */
 $pageTitle = 'Dashboard';
 $selectedPeriod = $selectedPeriod ?? ($metrics['period_label'] ?? 'day');
@@ -151,6 +152,46 @@ $expiringCount = count($expiringCampaigns);
 $lowStockCount = count($lowStockProviders);
 $lowStockProductCount = count($lowStockProducts);
 
+$currentUser = $currentUser ?? null;
+$welcomeTitle = null;
+$welcomeSubtitle = '';
+if (is_array($currentUser)) {
+    $nameCandidates = [
+        trim((string) ($currentUser['fullname'] ?? '')),
+        trim(trim((string) ($currentUser['first_name'] ?? '')) . ' ' . trim((string) ($currentUser['last_name'] ?? ''))),
+        trim((string) ($currentUser['username'] ?? '')),
+    ];
+    $displayName = null;
+    foreach ($nameCandidates as $candidate) {
+        if ($candidate !== '') {
+            $displayName = $candidate;
+            break;
+        }
+    }
+    if ($displayName === null || $displayName === '') {
+        $displayName = 'Operatore';
+    }
+
+    try {
+        $currentHour = (int) (new \DateTimeImmutable('now'))->format('G');
+    } catch (\Throwable) {
+        $currentHour = 12;
+    }
+
+    if ($currentHour >= 5 && $currentHour < 12) {
+        $greeting = 'Buongiorno';
+    } elseif ($currentHour >= 12 && $currentHour < 18) {
+        $greeting = 'Buon pomeriggio';
+    } elseif ($currentHour >= 18 && $currentHour < 23) {
+        $greeting = 'Buonasera';
+    } else {
+        $greeting = 'Bentornato';
+    }
+
+    $welcomeTitle = sprintf('%s, %s!', $greeting, $displayName);
+    $welcomeSubtitle = 'Qui trovi le metriche più rilevanti aggiornate in tempo reale.';
+}
+
 ?>
 <section class="page">
     <header class="page__header">
@@ -158,6 +199,17 @@ $lowStockProductCount = count($lowStockProducts);
             <h2>Dashboard</h2>
             <p>Comando centralizzato su vendite, clientela, campagne e compliance.</p>
         </div>
+        <?php if ($welcomeTitle !== null): ?>
+            <div class="dashboard-welcome" role="status">
+                <div class="dashboard-welcome__icon" aria-hidden="true">👋</div>
+                <div class="dashboard-welcome__content">
+                    <p class="dashboard-welcome__title"><?= htmlspecialchars($welcomeTitle) ?></p>
+                    <?php if ($welcomeSubtitle !== ''): ?>
+                        <p class="dashboard-welcome__subtitle"><?= htmlspecialchars($welcomeSubtitle) ?></p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endif; ?>
         <div class="page__filters">
             <?php foreach ($periodLabels as $key => $label): ?>
                 <a class="pill-switch<?= $selectedPeriod === $key ? ' is-active' : '' ?>" href="index.php?page=dashboard&period=<?= $key ?>">
