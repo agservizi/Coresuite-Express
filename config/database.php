@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+$autoloadPath = __DIR__ . '/../vendor/autoload.php';
+if (is_file($autoloadPath)) {
+    require_once $autoloadPath;
+}
+
 $config = require __DIR__ . '/config.php';
 $GLOBALS['config'] = $config;
 $timezone = $config['app']['timezone'] ?? 'Europe/Rome';

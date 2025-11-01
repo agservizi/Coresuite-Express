@@ -287,7 +287,7 @@ final class PdaImportService
 
             return [
                 'success' => false,
-                'error' => 'Installa "pdftotext" sul server o carica un estratto in formato .txt/.csv.',
+                'error' => 'Installa la libreria "smalot/pdfparser" oppure carica l\'estratto della PDA in formato .txt/.csv.',
                 'raw_text' => null,
             ];
         }
@@ -302,85 +302,23 @@ final class PdaImportService
 
     private function convertPdfToText(string $path): ?string
     {
-        $binary = $this->locatePdftotext();
-        if ($binary === null) {
+        if (!class_exists('Smalot\\PdfParser\\Parser')) {
             return null;
         }
 
-        $tempFile = tempnam(sys_get_temp_dir(), 'pda_txt_');
-        if ($tempFile === false) {
-            return null;
-        }
-
-        $command = escapeshellarg($binary) . ' -layout ' . escapeshellarg($path) . ' ' . escapeshellarg($tempFile);
-        $descriptorSpec = [
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-        $process = proc_open($command, $descriptorSpec, $pipes);
-        if (!is_resource($process)) {
-            @unlink($tempFile);
-            return null;
-        }
-
-        $stdout = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
-        foreach ($pipes as $pipe) {
-            fclose($pipe);
-        }
-        $exitCode = proc_close($process);
-
-        if ($exitCode !== 0) {
-            @unlink($tempFile);
-            if ($stdout !== '') {
-                return $stdout;
-            }
-            if ($stderr !== '') {
+        try {
+            $parserClass = 'Smalot\\PdfParser\\Parser';
+            $parser = new $parserClass();
+            $pdf = $parser->parseFile($path);
+            $text = $pdf->getText();
+            if (!is_string($text)) {
                 return null;
             }
+
+            return $text !== '' ? $text : null;
+        } catch (\Throwable $exception) {
             return null;
         }
-
-        $text = file_get_contents($tempFile);
-        @unlink($tempFile);
-
-        return $text === false ? null : $text;
-    }
-
-    private function locatePdftotext(): ?string
-    {
-        $candidates = [];
-        if (stripos(PHP_OS, 'WIN') === 0) {
-            $output = [];
-            @exec('where pdftotext 2>nul', $output);
-            foreach ($output as $line) {
-                $line = trim($line);
-                if ($line !== '' && is_file($line)) {
-                    $candidates[] = $line;
-                }
-            }
-            $candidates[] = 'C:\\Program Files\\Poppler\\pdftotext.exe';
-            $candidates[] = 'C:\\Program Files\\poppler-0.68.0\\bin\\pdftotext.exe';
-        } else {
-            $output = [];
-            @exec('command -v pdftotext 2>/dev/null', $output);
-            foreach ($output as $line) {
-                $line = trim($line);
-                if ($line !== '' && is_file($line)) {
-                    $candidates[] = $line;
-                }
-            }
-            $candidates[] = '/usr/bin/pdftotext';
-            $candidates[] = '/usr/local/bin/pdftotext';
-        }
-
-        foreach ($candidates as $candidate) {
-            if ($candidate !== '' && is_file($candidate) && is_executable($candidate)) {
-                return $candidate;
-            }
-        }
-
-        return null;
     }
 
     private function sanitizeText(string $text): string
