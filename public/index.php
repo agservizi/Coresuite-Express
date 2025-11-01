@@ -166,7 +166,6 @@ use App\Controllers\SalesController;
 use App\Controllers\SupportRequestController;
 use App\Controllers\SsoController;
 use App\Controllers\PdaImportController;
-use App\Controllers\OfferBrochureController;
 use App\Services\AuthService;
 use App\Services\CustomerService;
 use App\Services\DiscountCampaignService;
@@ -184,8 +183,6 @@ use App\Services\NotificationDispatcher;
 use App\Services\SystemNotificationService;
 use App\Services\SsoService;
 use App\Services\PdaImportService;
-use App\Services\OfferBrochureService;
-use App\Services\OfferDesignService;
 
 $pdo = Database::getConnection();
 
@@ -247,8 +244,6 @@ $saleNotificationService = new SaleNotificationService(
     $saleNotificationLog,
     $systemNotificationService
 );
-$offerBrochureService = new OfferBrochureService();
-$offerDesignService = new OfferDesignService($pdo);
 $ssoConfig = $GLOBALS['config']['sso'] ?? [];
 $ssoService = new SsoService($pdo, is_array($ssoConfig) ? $ssoConfig : []);
 
@@ -263,7 +258,6 @@ $salesController = new SalesController($salesService, $discountCampaignService, 
 $supportRequestController = new SupportRequestController($supportRequestService);
 $ssoController = new SsoController($ssoService);
 $pdaImportController = new PdaImportController($pdaImportService);
-$offerBrochureController = new OfferBrochureController($offerBrochureService, $offerDesignService);
 
 $page = $_GET['page'] ?? 'dashboard';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -612,152 +606,6 @@ switch ($page) {
             'nextSteps' => $nextSteps,
             'operationalPulse' => $operationalPulse,
         ]);
-        break;
-
-    case 'offers_designer':
-        $userId = is_array($currentUser) && isset($currentUser['id']) ? (int) $currentUser['id'] : 0;
-
-        if ($method === 'GET' && (isset($_GET['reset']) && $_GET['reset'] === '1')) {
-            unset($_SESSION['offer_designer_last_input']);
-        }
-
-        $action = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
-        if ($action !== '') {
-            if ($userId === 0) {
-                jsonResponse([
-                    'success' => false,
-                    'message' => 'Sessione non valida.',
-                ], 401);
-            }
-
-            if ($action === 'list_designs' && $method === 'GET') {
-                $designs = $offerBrochureController->listDesigns($userId);
-                jsonResponse([
-                    'success' => true,
-                    'designs' => $designs,
-                ]);
-            }
-
-            if ($action === 'load_design' && $method === 'GET') {
-                $designId = isset($_GET['design']) ? (string) $_GET['design'] : '';
-                if ($designId === '') {
-                    jsonResponse([
-                        'success' => false,
-                        'message' => 'Layout non specificato.',
-                    ], 400);
-                }
-
-                $design = $offerBrochureController->loadDesign($userId, $designId);
-                if ($design === null) {
-                    jsonResponse([
-                        'success' => false,
-                        'message' => 'Layout non trovato.',
-                    ], 404);
-                }
-
-                jsonResponse([
-                    'success' => true,
-                    'design' => $design,
-                ]);
-            }
-
-            if ($action === 'save_design' && $method === 'POST') {
-                $payload = getJsonBody();
-                if (!is_array($payload) || $payload === []) {
-                    $payload = $_POST;
-                }
-
-                $result = $offerBrochureController->saveDesign($userId, is_array($payload) ? $payload : []);
-                $status = $result['success'] ? 200 : 422;
-                $response = [
-                    'success' => $result['success'],
-                    'message' => $result['message'],
-                ];
-                if (isset($result['errors'])) {
-                    $response['errors'] = $result['errors'];
-                }
-                if (isset($result['design'])) {
-                    $response['design'] = $result['design'];
-                }
-
-                jsonResponse($response, $status);
-            }
-
-            if ($action === 'delete_design' && $method === 'POST') {
-                $payload = getJsonBody();
-                $designId = '';
-                if (is_array($payload) && isset($payload['design_id'])) {
-                    $designId = (string) $payload['design_id'];
-                } elseif (isset($_POST['design_id'])) {
-                    $designId = (string) $_POST['design_id'];
-                }
-
-                if ($designId === '') {
-                    jsonResponse([
-                        'success' => false,
-                        'message' => 'Layout non specificato.',
-                    ], 400);
-                }
-
-                $result = $offerBrochureController->deleteDesign($userId, $designId);
-                $status = $result['success'] ? 200 : 404;
-                jsonResponse($result, $status);
-            }
-
-            if ($action === 'generate_canvas_pdf' && $method === 'POST') {
-                $payload = getJsonBody();
-                if (!is_array($payload) || $payload === []) {
-                    if (isset($_POST['canvas_payload']) && is_string($_POST['canvas_payload'])) {
-                        $decoded = json_decode($_POST['canvas_payload'], true);
-                        $payload = is_array($decoded) ? $decoded : [];
-                    } else {
-                        $payload = $_POST;
-                    }
-                }
-
-                $pdfDocument = $offerBrochureController->generateFromCanvas(is_array($payload) ? $payload : []);
-                if (is_array($payload) && isset($payload['design_id']) && is_string($payload['design_id'])) {
-                    $offerBrochureController->markDesignUsed($userId, $payload['design_id']);
-                }
-
-                header('Content-Type: ' . $pdfDocument['mime']);
-                header('Content-Disposition: attachment; filename="' . $pdfDocument['filename'] . '"');
-                header('Content-Length: ' . strlen($pdfDocument['content']));
-                echo $pdfDocument['content'];
-                exit;
-            }
-
-            jsonResponse([
-                'success' => false,
-                'message' => 'Azione non supportata.',
-            ], 400);
-        }
-
-        if ($method === 'POST' && ($_POST['action'] ?? '') === 'generate_brochure') {
-            $postInput = $_POST;
-            $persistable = [];
-            $keys = ['title', 'subtitle', 'price', 'description', 'cta', 'contacts', 'highlights', 'hero_image', 'format', 'orientation', 'theme'];
-            foreach ($keys as $key) {
-                if (isset($postInput[$key]) && is_string($postInput[$key])) {
-                    $persistable[$key] = $postInput[$key];
-                }
-            }
-            if ($persistable !== []) {
-                $_SESSION['offer_designer_last_input'] = $persistable;
-            }
-
-            $pdfDocument = $offerBrochureController->generatePdf($postInput);
-            header('Content-Type: ' . $pdfDocument['mime']);
-            header('Content-Disposition: attachment; filename="' . $pdfDocument['filename'] . '"');
-            header('Content-Length: ' . strlen($pdfDocument['content']));
-            echo $pdfDocument['content'];
-            exit;
-        }
-
-        $persistedInput = $_SESSION['offer_designer_last_input'] ?? null;
-        $viewData = $offerBrochureController->viewData(is_array($persistedInput) ? $persistedInput : null, $userId > 0 ? $userId : null);
-        $viewData['currentUser'] = $currentUser;
-        render('offers_brochure', $viewData);
         break;
 
     case 'reports':

@@ -118,7 +118,6 @@ if ($currentRoute === '' || $currentRoute === '/') {
         </div>
         <nav class="sidebar__nav">
             <a href="index.php?page=dashboard" class="sidebar__link" data-tooltip="Dashboard">🏠 <span>Dashboard</span></a>
-            <a href="index.php?page=offers_designer" class="sidebar__link" data-tooltip="Design Studio">🎨 <span>Design studio offerte</span></a>
             <a href="index.php?page=sim_stock" class="sidebar__link" data-tooltip="Magazzino SIM">📥 <span>Magazzino SIM</span></a>
             <a href="index.php?page=products" class="sidebar__link" data-tooltip="Prodotti">🛒 <span>Prodotti</span></a>
             <a href="index.php?page=products_list" class="sidebar__link" data-tooltip="Lista Prodotti">📋 <span>Lista prodotti</span></a>
