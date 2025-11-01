@@ -278,6 +278,30 @@ if ($currentUser === null && !in_array($page, ['login', 'login_mfa'], true)) {
     exit;
 }
 
+if ($currentUser !== null) {
+    $allowedWithoutMfa = ['security', 'logout', 'notifications_stream', 'notifications_mark_all_read'];
+    $state = $authController->getSecurityState((int) $currentUser['id']);
+    $hasMfa = is_array($state) && (($state['mfa_enabled'] ?? false) === true);
+
+    if ($hasMfa) {
+        unset($_SESSION['mfa_enforcement_prompted']);
+    } elseif (!in_array($page, $allowedWithoutMfa, true)) {
+        if (empty($_SESSION['mfa_enforcement_prompted'])) {
+            pushFlashToast([
+                'type' => 'warning',
+                'title' => 'Proteggi il tuo account',
+                'message' => 'Configura l’autenticazione a due fattori per continuare a usare la piattaforma.',
+                'duration' => 0,
+                'dismissible' => false,
+            ]);
+            $_SESSION['mfa_enforcement_prompted'] = true;
+        }
+
+        header('Location: index.php?page=security&setup=1');
+        exit;
+    }
+}
+
 if ($page === 'login_mfa') {
     if ($currentUser !== null) {
         header('Location: index.php');

@@ -350,6 +350,8 @@ final class AuthService
         $this->removeRememberTokensForUser($userId);
         $codes = $this->generateRecoveryCodesForUser($userId);
 
+        unset($_SESSION['mfa_enforcement_prompted']);
+
         return [
             'success' => true,
             'recovery_codes' => $codes,
@@ -410,6 +412,8 @@ final class AuthService
         }
 
         $this->removeRememberTokensForUser($userId);
+
+        unset($_SESSION['mfa_enforcement_prompted']);
 
         return [
             'success' => true,
