@@ -10,24 +10,86 @@ declare(strict_types=1);
  * @var array<int, array<string, mixed>> $availableOffers
  * @var array<int, array<string, mixed>> $availableProducts
  * @var array<int, array<string, mixed>> $availableCustomers
+ * @var array<int, array<string, mixed>> $availableProviders
+ * @var array{success:bool,message:string,warnings?:array<int,string>,errors?:array<int,string>}|null $pdaFeedback
+ * @var array<string, mixed>|null $pdaPrefill
  */
 $pageTitle = 'Nuova vendita';
 $availableOffers = $availableOffers ?? [];
 $availableProducts = $availableProducts ?? [];
 $availableCustomers = $availableCustomers ?? [];
+$availableProviders = $availableProviders ?? [];
 $feedbackCreate = $feedbackCreate ?? null;
 $feedbackCancel = $feedbackCancel ?? null;
 $feedbackRefund = $feedbackRefund ?? null;
+$pdaFeedback = $pdaFeedback ?? null;
+$pdaPrefill = $pdaPrefill ?? null;
 $discountCampaigns = $discountCampaigns ?? [];
 $taxRate = (float) ($GLOBALS['config']['app']['tax_rate'] ?? 0.0);
 $taxNote = $GLOBALS['config']['app']['tax_note'] ?? "Operazione non soggetta a IVA ai sensi dell'art. 74 DPR 633/72";
 $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
+$prefillCustomer = [
+    'id' => isset($pdaPrefill['customer_id']) ? (int) $pdaPrefill['customer_id'] : null,
+    'name' => isset($pdaPrefill['customer_name']) ? (string) $pdaPrefill['customer_name'] : '',
+    'email' => isset($pdaPrefill['customer_email']) ? (string) $pdaPrefill['customer_email'] : '',
+    'phone' => isset($pdaPrefill['customer_phone']) ? (string) $pdaPrefill['customer_phone'] : '',
+    'tax_code' => isset($pdaPrefill['customer_tax_code']) ? (string) $pdaPrefill['customer_tax_code'] : '',
+    'note' => isset($pdaPrefill['customer_note']) ? (string) $pdaPrefill['customer_note'] : '',
+    'provider_id' => isset($pdaPrefill['provider']['id']) ? (int) $pdaPrefill['provider']['id'] : null,
+];
 ?>
 <section class="page">
     <header class="page__header">
         <h2>Nuova vendita</h2>
         <p>Cassa rapida con scontrino termico 80&nbsp;mm e gestione immediata di annulli e resi.</p>
     </header>
+
+    <section class="page__section">
+        <header class="section__header">
+            <h3>Importa PDA</h3>
+            <p class="muted">Carica la pratica d'attivazione per compilare automaticamente cliente e articoli.</p>
+        </header>
+
+        <?php if ($pdaFeedback !== null): ?>
+            <div class="alert <?= ($pdaFeedback['success'] ?? false) ? 'alert--success' : 'alert--error' ?>">
+                <p><?= htmlspecialchars((string) ($pdaFeedback['message'] ?? 'Operazione completata.')) ?></p>
+                <?php foreach ($pdaFeedback['errors'] ?? [] as $error): ?>
+                    <p><?= htmlspecialchars((string) $error) ?></p>
+                <?php endforeach; ?>
+                <?php if (!empty($pdaFeedback['warnings'])): ?>
+                    <ul class="muted">
+                        <?php foreach ($pdaFeedback['warnings'] as $warning): ?>
+                            <li><?= htmlspecialchars((string) $warning) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+
+        <form method="post" enctype="multipart/form-data" class="form">
+            <input type="hidden" name="action" value="upload_pda">
+            <div class="form__grid">
+                <div class="form__group">
+                    <label for="pda_provider_id">Gestore</label>
+                    <select name="pda_provider_id" id="pda_provider_id" required>
+                        <option value="">-- Seleziona gestore --</option>
+                        <?php foreach ($availableProviders as $provider): ?>
+                            <?php $providerId = (int) ($provider['id'] ?? 0); ?>
+                            <option value="<?= $providerId ?>" <?= $prefillCustomer['provider_id'] === $providerId ? 'selected' : '' ?>>
+                                <?= htmlspecialchars((string) ($provider['name'] ?? '')) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form__group">
+                    <label for="pda_file">File PDA</label>
+                    <input type="file" name="pda_file" id="pda_file" accept=".pdf,.txt,.csv,.json" required>
+                    <small class="muted">Formati supportati: PDF (richiede pdftotext), TXT, CSV, JSON. Iliad escluso.</small>
+                </div>
+            </div>
+            <button type="submit" class="btn btn--secondary">Importa PDA</button>
+        </form>
+    </section>
 
     <div class="sales-layout">
         <div class="sales-layout__main">
@@ -64,19 +126,33 @@ $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
                                         $phone !== '' ? $phone : null,
                                     ]);
                                 ?>
-                                <option value="<?= $customerId ?>"><?= htmlspecialchars(implode(' • ', $labelParts)) ?></option>
+                                <option value="<?= $customerId ?>" <?= $prefillCustomer['id'] === $customerId ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars(implode(' • ', $labelParts)) ?>
+                                </option>
                             <?php endforeach; ?>
                         </select>
                         <small class="muted">Seleziona un cliente già in anagrafica, altrimenti compila i campi liberi.</small>
                     </div>
                     <div class="form__group">
                         <label for="customer_name">Cliente libero</label>
-                        <input type="text" name="customer_name" id="customer_name" placeholder="Nome cliente">
+                        <input type="text" name="customer_name" id="customer_name" placeholder="Nome cliente" value="<?= htmlspecialchars($prefillCustomer['name']) ?>">
                         <small class="muted">Usato solo se il cliente non è presente in anagrafica.</small>
                     </div>
                     <div class="form__group">
+                        <label for="customer_email">Email cliente</label>
+                        <input type="email" name="customer_email" id="customer_email" placeholder="nome@cliente.it" value="<?= htmlspecialchars($prefillCustomer['email']) ?>">
+                    </div>
+                    <div class="form__group">
+                        <label for="customer_phone">Telefono cliente</label>
+                        <input type="text" name="customer_phone" id="customer_phone" placeholder="+39..." value="<?= htmlspecialchars($prefillCustomer['phone']) ?>">
+                    </div>
+                    <div class="form__group">
+                        <label for="customer_tax_code">Codice fiscale / P.IVA</label>
+                        <input type="text" name="customer_tax_code" id="customer_tax_code" placeholder="RSSMRA80A01F205X" value="<?= htmlspecialchars($prefillCustomer['tax_code']) ?>">
+                    </div>
+                    <div class="form__group">
                         <label for="customer_note">Nota cliente</label>
-                        <input type="text" name="customer_note" id="customer_note" placeholder="Nota su documento o contatto">
+                        <input type="text" name="customer_note" id="customer_note" placeholder="Nota su documento o contatto" value="<?= htmlspecialchars($prefillCustomer['note']) ?>">
                     </div>
                     <div class="form__group">
                         <label for="payment_method">Pagamento</label>
@@ -438,6 +514,12 @@ $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
             </section>
         </aside>
     </div>
+
+    <?php if ($pdaPrefill !== null): ?>
+        <script>
+            window.PdaPrefill = <?= json_encode($pdaPrefill, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+        </script>
+    <?php endif; ?>
 </section>
 
 <?php if ($pendingReceiptId > 0): ?>

@@ -1184,8 +1184,143 @@ document.addEventListener('DOMContentLoaded', () => {
   setupDraggableDashboard();
   setupAccordions();
 
+  if (typeof window.PdaPrefill === 'object' && window.PdaPrefill) {
+    applyPdaPrefill(window.PdaPrefill);
+    window.PdaPrefill = null;
+  }
+
   if (discountCampaignSelect && discountCampaignSelect.value) {
     scheduleDiscountUpdate();
+  }
+
+  function applyPdaPrefill(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    if (itemsTable) {
+      resetAllItemRows();
+      const rows = Array.isArray(payload.items) ? payload.items : [];
+      rows.forEach((item, index) => {
+        let row = itemsTable.querySelectorAll('.item-row')[index] || null;
+        if (!row) {
+          row = addNewItemRow();
+        }
+        if (!row) {
+          return;
+        }
+        setRowFromPrefill(row, item || {});
+      });
+      scheduleDiscountUpdate();
+    }
+
+    const customerSelect = document.querySelector('#customer_id');
+    if (customerSelect instanceof HTMLSelectElement && typeof payload.customer_id === 'number') {
+      customerSelect.value = String(payload.customer_id);
+    }
+
+    const customerNameInput = document.querySelector('#customer_name');
+    if (customerNameInput instanceof HTMLInputElement && typeof payload.customer_name === 'string') {
+      if (!customerNameInput.value) {
+        customerNameInput.value = payload.customer_name;
+      }
+    }
+
+    const customerEmailInput = document.querySelector('#customer_email');
+    if (customerEmailInput instanceof HTMLInputElement && typeof payload.customer_email === 'string') {
+      if (!customerEmailInput.value) {
+        customerEmailInput.value = payload.customer_email;
+      }
+    }
+
+    const customerPhoneInput = document.querySelector('#customer_phone');
+    if (customerPhoneInput instanceof HTMLInputElement && typeof payload.customer_phone === 'string') {
+      if (!customerPhoneInput.value) {
+        customerPhoneInput.value = payload.customer_phone;
+      }
+    }
+
+    const customerTaxCodeInput = document.querySelector('#customer_tax_code');
+    if (customerTaxCodeInput instanceof HTMLInputElement && typeof payload.customer_tax_code === 'string') {
+      if (!customerTaxCodeInput.value) {
+        customerTaxCodeInput.value = payload.customer_tax_code;
+      }
+    }
+
+    const customerNoteInput = document.querySelector('#customer_note');
+    if (customerNoteInput instanceof HTMLInputElement && typeof payload.customer_note === 'string') {
+      if (!customerNoteInput.value) {
+        customerNoteInput.value = payload.customer_note;
+      }
+    }
+
+    if (window.notify && typeof window.notify.success === 'function') {
+      window.notify.success('Dati PDA importati. Controlla gli articoli prima di salvare.');
+    }
+  }
+
+  function resetAllItemRows() {
+    if (!itemsTable) {
+      return;
+    }
+    const rows = itemsTable.querySelectorAll('.item-row');
+    rows.forEach((row, index) => {
+      if (index === 0) {
+        resetRow(row);
+      } else {
+        row.remove();
+      }
+    });
+  }
+
+  function setRowFromPrefill(row, item) {
+    if (!row) {
+      return;
+    }
+
+    const iccidId = typeof item.iccid_id === 'number' ? item.iccid_id : null;
+    const iccidCode = typeof item.iccid_code === 'string' ? item.iccid_code : null;
+    const description = typeof item.description === 'string' ? item.description : '';
+    const priceValue = typeof item.price === 'number' && Number.isFinite(item.price) ? item.price : null;
+    const quantityValue = typeof item.quantity === 'number' && Number.isFinite(item.quantity) ? Math.max(1, Math.round(item.quantity)) : 1;
+
+    const select = row.querySelector('select[name="item_iccid[]"]');
+    const hidden = row.querySelector('input[name="item_iccid_code[]"]');
+    const descInput = row.querySelector('input[name="item_description[]"]');
+    const priceInput = row.querySelector('input[name="item_price[]"]');
+    const qtyInput = row.querySelector('input[name="item_quantity[]"]');
+
+    if (select instanceof HTMLSelectElement) {
+      if (iccidId !== null) {
+        select.value = String(iccidId);
+      } else {
+        select.value = '';
+      }
+    }
+
+    if (hidden instanceof HTMLInputElement) {
+      hidden.value = iccidCode ?? '';
+    }
+
+    if (descInput instanceof HTMLInputElement) {
+      if (description) {
+        descInput.value = description;
+      }
+    }
+
+    if (priceInput instanceof HTMLInputElement) {
+      if (priceValue !== null) {
+        priceInput.value = priceValue.toFixed(2);
+      }
+      priceInput.required = iccidId !== null;
+    }
+
+    if (qtyInput instanceof HTMLInputElement) {
+      qtyInput.value = String(quantityValue);
+    }
+
+    row.classList.add('highlight');
+    window.setTimeout(() => row.classList.remove('highlight'), 1200);
   }
 
   function handleBarcode(code) {

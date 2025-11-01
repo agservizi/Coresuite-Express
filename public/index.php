@@ -160,6 +160,7 @@ use App\Controllers\ReportsController;
 use App\Controllers\SalesController;
 use App\Controllers\SupportRequestController;
 use App\Controllers\SsoController;
+use App\Controllers\PdaImportController;
 use App\Services\AuthService;
 use App\Services\CustomerService;
 use App\Services\DiscountCampaignService;
@@ -176,6 +177,7 @@ use App\Services\UserService;
 use App\Services\NotificationDispatcher;
 use App\Services\SystemNotificationService;
 use App\Services\SsoService;
+use App\Services\PdaImportService;
 
 $pdo = Database::getConnection();
 
@@ -224,6 +226,7 @@ $productService = new ProductService($pdo);
 $productRequestService = new ProductRequestService($pdo);
 $salesService = new SalesService($pdo);
 $discountCampaignService = new DiscountCampaignService($pdo);
+$pdaImportService = new PdaImportService($pdo, $customerService);
 $supportRequestService = new SupportRequestService($pdo);
 $userService = new UserService($pdo);
 $stockMonitorService = new StockMonitorService($pdo, $alertEmail, $logPath, $resendApiKey, $resendFrom, $systemNotificationService);
@@ -249,6 +252,7 @@ $productRequestController = new ProductRequestController($productRequestService)
 $salesController = new SalesController($salesService, $discountCampaignService, $saleNotificationService);
 $supportRequestController = new SupportRequestController($supportRequestService);
 $ssoController = new SsoController($ssoService);
+$pdaImportController = new PdaImportController($pdaImportService);
 
 $page = $_GET['page'] ?? 'dashboard';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -1543,7 +1547,15 @@ switch ($page) {
         $feedbackCreate = $_SESSION['sale_create_feedback'] ?? null;
         $feedbackCancel = $_SESSION['sale_cancel_feedback'] ?? null;
         $feedbackRefund = $_SESSION['sale_refund_feedback'] ?? null;
-        unset($_SESSION['sale_create_feedback'], $_SESSION['sale_cancel_feedback'], $_SESSION['sale_refund_feedback']);
+        $pdaFeedback = $_SESSION['sale_pda_feedback'] ?? null;
+        $pdaPrefill = $_SESSION['sale_pda_prefill'] ?? null;
+        unset(
+            $_SESSION['sale_create_feedback'],
+            $_SESSION['sale_cancel_feedback'],
+            $_SESSION['sale_refund_feedback'],
+            $_SESSION['sale_pda_feedback'],
+            $_SESSION['sale_pda_prefill']
+        );
 
         if ($method === 'POST' && ($_POST['action'] ?? '') === 'load_sale_details') {
             $saleId = isset($_POST['sale_id']) ? (int) $_POST['sale_id'] : 0;
@@ -1555,6 +1567,15 @@ switch ($page) {
 
         if ($method === 'POST') {
             $action = $_POST['action'] ?? 'create_sale';
+            if ($action === 'upload_pda') {
+                $result = $pdaImportController->upload($_FILES, $_POST, $currentUser);
+                $_SESSION['sale_pda_feedback'] = $result;
+                if (($result['success'] ?? false) && isset($result['prefill'])) {
+                    $_SESSION['sale_pda_prefill'] = $result['prefill'];
+                }
+                header('Location: index.php?page=sales_create');
+                exit;
+            }
             if ($action === 'cancel_sale') {
                 $result = $salesController->cancel($currentUser['id'], $_POST);
                 $_SESSION['sale_cancel_feedback'] = $result;
@@ -1580,6 +1601,12 @@ switch ($page) {
             exit;
         }
 
+        $availableProvidersRaw = $iccidController->providers();
+        $availableProviders = array_values(array_filter(
+            $availableProvidersRaw,
+            static fn (array $provider): bool => strcasecmp((string) ($provider['name'] ?? ''), 'iliad') !== 0
+        ));
+
         render('sales_create', [
             'availableIccid' => $iccidController->available(),
             'availableOffers' => $offersController->listActive(),
@@ -1589,6 +1616,9 @@ switch ($page) {
             'feedbackCreate' => $feedbackCreate,
             'feedbackCancel' => $feedbackCancel,
             'feedbackRefund' => $feedbackRefund,
+            'pdaFeedback' => $pdaFeedback,
+            'pdaPrefill' => $pdaPrefill,
+            'availableProviders' => $availableProviders,
             'currentUser' => $currentUser,
         ]);
         break;
