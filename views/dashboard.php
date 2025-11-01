@@ -210,12 +210,18 @@ if (is_array($currentUser)) {
                 </div>
             </div>
         <?php endif; ?>
-        <div class="page__filters">
-            <?php foreach ($periodLabels as $key => $label): ?>
-                <a class="pill-switch<?= $selectedPeriod === $key ? ' is-active' : '' ?>" href="index.php?page=dashboard&period=<?= $key ?>">
-                    <?= htmlspecialchars($label) ?>
-                </a>
-            <?php endforeach; ?>
+        <div class="dashboard-period-card">
+            <div class="dashboard-period-card__header">
+                <span class="dashboard-period-card__title">Periodo di analisi</span>
+                <span class="dashboard-period-card__subtitle">Scegli l'intervallo temporale per tutte le metriche</span>
+            </div>
+            <div class="dashboard-period-card__actions">
+                <?php foreach ($periodLabels as $key => $label): ?>
+                    <a class="btn btn--ghost<?= $selectedPeriod === $key ? ' is-active' : '' ?>" href="index.php?page=dashboard&period=<?= $key ?>">
+                        <?= htmlspecialchars($label) ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
         </div>
         <?php if ($nextSteps !== []): ?>
             <div class="page__actions">

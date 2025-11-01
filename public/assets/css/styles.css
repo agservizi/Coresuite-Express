@@ -268,6 +268,11 @@ body[data-sidebar-collapsed="true"] .topbar{padding-left:24px;padding-right:24px
 .dashboard-panel--wide{grid-column:span 2;}
 .dashboard-panel__header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
 .dashboard-panel__meta{font-size:13px;color:#64748b;}
+.dashboard-period-card{margin-top:24px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;background:#fff;border-radius:12px;padding:18px 20px;box-shadow:0 2px 6px rgba(15,23,42,.08);border:1px solid #e2e8f0;}
+.dashboard-period-card__header{display:flex;flex-direction:column;gap:2px;min-width:220px;}
+.dashboard-period-card__title{font-size:15px;font-weight:600;color:#1f2937;}
+.dashboard-period-card__subtitle{font-size:12px;color:#64748b;}
+.dashboard-period-card__actions{display:flex;flex-wrap:wrap;gap:10px;}
 .dashboard-welcome{margin-top:16px;display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.08);}
 .dashboard-welcome__icon{font-size:28px;line-height:1;}
 .dashboard-welcome__content{display:flex;flex-direction:column;gap:4px;min-width:0;}
@@ -437,6 +442,11 @@ body[data-sidebar-collapsed="true"] .topbar{padding-left:24px;padding-right:24px
 .btn--primary{background:#2563eb;color:#fff;}
 .btn--primary:hover{background:#1d4ed8;}
 .btn--secondary{background:#e0e7ff;color:#1d4ed8;}
+.btn--ghost{background:#fff;border:1px solid #cbd5e1;color:#1f2937;transition:border-color .2s ease,box-shadow .2s ease,color .2s ease,background .2s ease;}
+.btn--ghost:hover{border-color:#94a3b8;color:#0f172a;background:#f8fafc;box-shadow:0 4px 12px rgba(15,23,42,.12);}
+.btn--ghost.is-active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.16);}
+.btn--ghost:focus-visible{outline:2px solid rgba(37,99,235,.45);outline-offset:2px;}
+.btn--ghost.is-active:hover{background:#e0e7ff;color:#1d4ed8;}
 .btn--icon{background:#fee2e2;color:#b91c1c;padding:6px 10px;}
 .btn--chip{background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;padding:8px 12px;border-radius:999px;font-size:13px;flex-direction:column;align-items:flex-start;min-width:150px;}
 .btn--chip small{font-size:11px;color:#475569;}
