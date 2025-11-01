@@ -18,7 +18,7 @@ final class UserService
     public function listOperators(): array
     {
         $stmt = $this->pdo->query(
-            'SELECT u.id, u.username, u.fullname, u.created_at, u.updated_at, u.role_id, r.name AS role_name
+            'SELECT u.id, u.username, u.fullname, u.created_at, u.updated_at, u.role_id, r.name AS role_name, u.mfa_enabled, u.mfa_enabled_at
              FROM users u
              INNER JOIN roles r ON r.id = u.role_id
              ORDER BY u.fullname ASC, u.username ASC'
@@ -39,7 +39,7 @@ final class UserService
         }
 
         $stmt = $this->pdo->prepare(
-            'SELECT u.id, u.username, u.fullname, u.role_id, u.created_at, u.updated_at, r.name AS role_name
+            'SELECT u.id, u.username, u.fullname, u.role_id, u.created_at, u.updated_at, r.name AS role_name, u.mfa_enabled, u.mfa_enabled_at
              FROM users u
              INNER JOIN roles r ON r.id = u.role_id
              WHERE u.id = :id

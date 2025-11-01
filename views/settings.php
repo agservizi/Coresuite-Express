@@ -455,6 +455,7 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                                 <th>Nome</th>
                                                 <th>Nome utente</th>
                                                 <th>Ruolo</th>
+                                                <th>MFA</th>
                                                 <th>Creato il</th>
                                                 <th>Aggiornato il</th>
                                                 <th class="table__col--actions">Azioni</th>
@@ -471,11 +472,26 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                                         ? date('d/m/Y H:i', strtotime((string) $operator['updated_at']))
                                                         : $createdAt;
                                                     $isSelf = $currentUserId === $operatorId;
+                                                    $mfaEnabled = (int) ($operator['mfa_enabled'] ?? 0) === 1;
+                                                    $mfaEnabledAt = null;
+                                                    if (!empty($operator['mfa_enabled_at'])) {
+                                                        $mfaEnabledAt = date('d/m/Y H:i', strtotime((string) $operator['mfa_enabled_at']));
+                                                    }
                                                 ?>
                                                 <tr>
                                                     <td><?= htmlspecialchars((string) ($operator['fullname'] ?? '')) ?></td>
                                                     <td><?= htmlspecialchars((string) $operator['username']) ?></td>
                                                     <td><?= htmlspecialchars((string) $operator['role_name']) ?></td>
+                                                    <td>
+                                                        <?php if ($mfaEnabled): ?>
+                                                            <span class="badge badge--success">Attiva</span>
+                                                            <?php if ($mfaEnabledAt !== null): ?>
+                                                                <div class="muted">dal <?= htmlspecialchars($mfaEnabledAt) ?></div>
+                                                            <?php endif; ?>
+                                                        <?php else: ?>
+                                                            <span class="badge badge--muted">Non attiva</span>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td><?= htmlspecialchars($createdAt) ?></td>
                                                     <td><?= htmlspecialchars($updatedAt) ?></td>
                                                     <td class="table__col--actions">
@@ -487,6 +503,13 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                                                     <input type="hidden" name="operator_id" value="<?= $operatorId ?>">
                                                                     <button type="submit" class="btn btn--danger btn--small">Elimina</button>
                                                                 </form>
+                                                                <?php if ($mfaEnabled): ?>
+                                                                    <form method="post" onsubmit="return confirm('Disattivare l\'MFA per questo operatore?');">
+                                                                        <input type="hidden" name="action" value="force_disable_mfa">
+                                                                        <input type="hidden" name="operator_id" value="<?= $operatorId ?>">
+                                                                        <button type="submit" class="btn btn--secondary btn--small">Reset MFA</button>
+                                                                    </form>
+                                                                <?php endif; ?>
                                                             <?php else: ?>
                                                                 <span class="badge badge--info">Attivo</span>
                                                             <?php endif; ?>

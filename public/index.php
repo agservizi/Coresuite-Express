@@ -260,6 +260,11 @@ if ($page === 'login' && $method === 'POST') {
         exit;
     }
 
+    if (!empty($result['mfa_required']) && isset($result['redirect'])) {
+        header('Location: ' . $result['redirect']);
+        exit;
+    }
+
     render('login', [
         'errors' => $result['errors'] ?? [],
         'appName' => $GLOBALS['config']['app']['name'] ?? 'Gestionale Telefonia',
@@ -268,8 +273,49 @@ if ($page === 'login' && $method === 'POST') {
     exit;
 }
 
-if ($currentUser === null && $page !== 'login') {
+if ($currentUser === null && !in_array($page, ['login', 'login_mfa'], true)) {
     header('Location: index.php?page=login');
+    exit;
+}
+
+if ($page === 'login_mfa') {
+    if ($currentUser !== null) {
+        header('Location: index.php');
+        exit;
+    }
+
+    if (!$authController->hasPendingMfa()) {
+        $authController->cancelPendingMfa();
+        header('Location: index.php?page=login');
+        exit;
+    }
+
+    $errors = [];
+    if ($method === 'POST') {
+        $action = isset($_POST['action']) ? (string) $_POST['action'] : 'verify';
+        if ($action === 'cancel') {
+            $authController->cancelPendingMfa();
+            header('Location: index.php?page=login');
+            exit;
+        }
+
+        $verification = $authController->verifyMfa($_POST);
+        if ($verification['success'] ?? false) {
+            header('Location: index.php');
+            exit;
+        }
+        if (!empty($verification['error'])) {
+            $errors[] = (string) $verification['error'];
+        }
+    }
+
+    $pendingMfa = $authController->getPendingMfa();
+
+    render('login_mfa', [
+        'errors' => $errors,
+        'pending' => $pendingMfa,
+        'appName' => $GLOBALS['config']['app']['name'] ?? 'Gestionale Telefonia',
+    ], false);
     exit;
 }
 
@@ -1028,6 +1074,21 @@ switch ($page) {
                     $target = isset($_POST['target_status']) ? ((int) $_POST['target_status'] === 1) : true;
                     $result = $discountCampaignService->setStatus($campaignId, $target);
                 }
+            } elseif ($action === 'force_disable_mfa') {
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono intervenire sull’MFA degli operatori.',
+                    ];
+                } else {
+                    $operatorId = isset($_POST['operator_id']) ? (int) $_POST['operator_id'] : 0;
+                    $result = $authController->disableMfa($operatorId, null, true);
+                    $result['message'] = ($result['success'] ?? false)
+                        ? 'MFA disattivata per l’operatore selezionato.'
+                        : ($result['error'] ?? 'Impossibile disattivare l’MFA per l’operatore.');
+                }
+                $redirectParams['operators_open'] = 1;
             } else {
                 $result = [
                     'success' => false,
@@ -1102,6 +1163,131 @@ switch ($page) {
             'auditPagination' => $auditLogsResult['pagination'],
             'buildAuditPageUrl' => $buildAuditPageUrl,
             'auditOpen' => $auditOpen,
+        ]);
+        break;
+
+    case 'security':
+        $userId = isset($currentUser['id']) ? (int) $currentUser['id'] : 0;
+        if ($userId <= 0) {
+            header('Location: index.php?page=login');
+            exit;
+        }
+
+        $issuer = $GLOBALS['config']['app']['name'] ?? 'Gestionale Telefonia';
+        $securityFeedback = $_SESSION['security_feedback'] ?? null;
+        unset($_SESSION['security_feedback']);
+        $securityCodes = $_SESSION['security_recovery_codes'] ?? [];
+        unset($_SESSION['security_recovery_codes']);
+
+        if ($method === 'POST') {
+            $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
+            $redirectParams = [];
+            $message = null;
+
+            if ($action === 'start_setup') {
+                $setupResult = $authController->beginMfaSetup($userId, $issuer);
+                if ($setupResult['success'] ?? false) {
+                    $message = [
+                        'success' => true,
+                        'message' => 'Scansiona il QR code e conferma il codice di verifica.',
+                    ];
+                    $redirectParams['setup'] = 1;
+                } else {
+                    $message = [
+                        'success' => false,
+                        'message' => $setupResult['error'] ?? 'Impossibile avviare la configurazione MFA.',
+                    ];
+                }
+            } elseif ($action === 'cancel_setup') {
+                $authController->cancelMfaSetup($userId);
+                $message = [
+                    'success' => true,
+                    'message' => 'Configurazione MFA annullata.',
+                ];
+            } elseif ($action === 'confirm_setup') {
+                $code = isset($_POST['mfa_code']) ? (string) $_POST['mfa_code'] : '';
+                $setupResult = $authController->confirmMfaSetup($userId, $code);
+                if ($setupResult['success'] ?? false) {
+                    $_SESSION['security_recovery_codes'] = $setupResult['recovery_codes'] ?? [];
+                    $message = [
+                        'success' => true,
+                        'message' => 'Autenticazione a due fattori attivata correttamente.',
+                    ];
+                } else {
+                    $message = [
+                        'success' => false,
+                        'message' => $setupResult['error'] ?? 'Impossibile confermare il codice MFA.',
+                    ];
+                    $redirectParams['setup'] = 1;
+                }
+            } elseif ($action === 'disable_mfa') {
+                $code = isset($_POST['mfa_code']) ? (string) $_POST['mfa_code'] : '';
+                $disableResult = $authController->disableMfa($userId, $code, false);
+                $message = [
+                    'success' => $disableResult['success'] ?? false,
+                    'message' => $disableResult['message'] ?? ($disableResult['error'] ?? 'Operazione completata.'),
+                ];
+            } elseif ($action === 'regenerate_codes') {
+                $code = isset($_POST['mfa_code']) ? (string) $_POST['mfa_code'] : '';
+                $regenResult = $authController->regenerateRecoveryCodes($userId, $code);
+                if ($regenResult['success'] ?? false) {
+                    $_SESSION['security_recovery_codes'] = $regenResult['recovery_codes'] ?? [];
+                    $message = [
+                        'success' => true,
+                        'message' => 'Nuovi codici di recupero generati.',
+                    ];
+                } else {
+                    $message = [
+                        'success' => false,
+                        'message' => $regenResult['error'] ?? 'Impossibile rigenerare i codici di recupero.',
+                    ];
+                }
+            }
+
+            if ($message !== null) {
+                $_SESSION['security_feedback'] = $message;
+            }
+
+            $query = ['page' => 'security'];
+            foreach ($redirectParams as $key => $value) {
+                if ($value === null) {
+                    continue;
+                }
+                $query[$key] = $value;
+            }
+
+            header('Location: index.php?' . http_build_query($query));
+            exit;
+        }
+
+        $state = $authController->getSecurityState($userId);
+        if ($state === null) {
+            $state = ['mfa_enabled' => false, 'mfa_enabled_at' => null];
+        }
+
+        $setupData = null;
+        if (isset($_GET['setup'])) {
+            $setupResult = $authController->getMfaSetupSecret($userId, $issuer);
+            if ($setupResult['success'] ?? false) {
+                $setupData = $setupResult;
+            } else {
+                if ($securityFeedback === null) {
+                    $securityFeedback = [
+                        'success' => false,
+                        'message' => $setupResult['error'] ?? 'Impossibile recuperare i dati di configurazione.',
+                    ];
+                }
+            }
+        }
+
+        render('security', [
+            'currentUser' => $currentUser,
+            'pageTitle' => 'Sicurezza account',
+            'state' => $state,
+            'setupData' => $setupData,
+            'feedback' => $securityFeedback,
+            'recoveryCodes' => $securityCodes,
+            'issuer' => $issuer,
         ]);
         break;
 
@@ -1626,6 +1812,11 @@ function resolveProfileShortcuts(string $roleKey): array
                 'description' => 'Rivedi accessi e modifiche recenti.',
                 'href' => 'index.php?page=settings&audit_open=1',
             ],
+            [
+                'label' => 'Sicurezza account',
+                'description' => 'Configura MFA e codici di recupero personali.',
+                'href' => 'index.php?page=security',
+            ],
         ],
         'cassiere' => [
             [
@@ -1638,6 +1829,11 @@ function resolveProfileShortcuts(string $roleKey): array
                 'description' => 'Consulta le operazioni effettuate finora.',
                 'href' => 'index.php?page=sales_list',
             ],
+            [
+                'label' => 'Sicurezza account',
+                'description' => 'Configura MFA e codici di recupero personali.',
+                'href' => 'index.php?page=security',
+            ],
         ],
     ];
 
@@ -1648,6 +1844,11 @@ function resolveProfileShortcuts(string $roleKey): array
             'label' => 'Preferenze account',
             'description' => 'Aggiorna le informazioni del tuo profilo.',
             'href' => 'index.php?page=settings',
+        ],
+        [
+            'label' => 'Sicurezza account',
+            'description' => 'Configura MFA e codici di recupero personali.',
+            'href' => 'index.php?page=security',
         ],
     ];
 }
