@@ -28,6 +28,7 @@ $discountCampaigns = $discountCampaigns ?? [];
 $taxRate = (float) ($GLOBALS['config']['app']['tax_rate'] ?? 0.0);
 $taxNote = $GLOBALS['config']['app']['tax_note'] ?? "Operazione non soggetta a IVA ai sensi dell'art. 74 DPR 633/72";
 $pendingReceiptId = isset($_GET['print']) ? max(0, (int) $_GET['print']) : 0;
+$shouldOpenPdaImport = $pdaFeedback !== null || $pdaPrefill !== null;
 $prefillCustomer = [
     'id' => isset($pdaPrefill['customer_id']) ? (int) $pdaPrefill['customer_id'] : null,
     'name' => isset($pdaPrefill['customer_name']) ? (string) $pdaPrefill['customer_name'] : '',
@@ -45,50 +46,59 @@ $prefillCustomer = [
     </header>
 
     <section class="page__section">
-        <header class="section__header">
-            <h3>Importa PDA</h3>
-            <p class="muted">Carica la pratica d'attivazione per compilare automaticamente cliente e articoli.</p>
-        </header>
+        <div class="settings-accordion">
+            <article class="settings-accordion__item" data-accordion data-open="<?= $shouldOpenPdaImport ? 'true' : 'false' ?>">
+                <button type="button" class="settings-accordion__toggle" data-accordion-toggle aria-expanded="<?= $shouldOpenPdaImport ? 'true' : 'false' ?>">
+                    <span class="settings-accordion__title">
+                        <span>Importa PDA <span class="muted">(facoltativo)</span></span>
+                    </span>
+                    <span class="settings-accordion__icon" aria-hidden="true"></span>
+                </button>
+                <div class="settings-accordion__content" data-accordion-content <?= $shouldOpenPdaImport ? '' : 'hidden' ?>>
+                    <p class="muted">Carica la pratica di attivazione per compilare automaticamente cliente e articoli.</p>
 
-        <?php if ($pdaFeedback !== null): ?>
-            <div class="alert <?= ($pdaFeedback['success'] ?? false) ? 'alert--success' : 'alert--error' ?>">
-                <p><?= htmlspecialchars((string) ($pdaFeedback['message'] ?? 'Operazione completata.')) ?></p>
-                <?php foreach ($pdaFeedback['errors'] ?? [] as $error): ?>
-                    <p><?= htmlspecialchars((string) $error) ?></p>
-                <?php endforeach; ?>
-                <?php if (!empty($pdaFeedback['warnings'])): ?>
-                    <ul class="muted">
-                        <?php foreach ($pdaFeedback['warnings'] as $warning): ?>
-                            <li><?= htmlspecialchars((string) $warning) ?></li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php endif; ?>
-            </div>
-        <?php endif; ?>
+                    <?php if ($pdaFeedback !== null): ?>
+                        <div class="alert <?= ($pdaFeedback['success'] ?? false) ? 'alert--success' : 'alert--error' ?>">
+                            <p><?= htmlspecialchars((string) ($pdaFeedback['message'] ?? 'Operazione completata.')) ?></p>
+                            <?php foreach ($pdaFeedback['errors'] ?? [] as $error): ?>
+                                <p><?= htmlspecialchars((string) $error) ?></p>
+                            <?php endforeach; ?>
+                            <?php if (!empty($pdaFeedback['warnings'])): ?>
+                                <ul class="muted">
+                                    <?php foreach ($pdaFeedback['warnings'] as $warning): ?>
+                                        <li><?= htmlspecialchars((string) $warning) ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
 
-        <form method="post" enctype="multipart/form-data" class="form">
-            <input type="hidden" name="action" value="upload_pda">
-            <div class="form__grid">
-                <div class="form__group">
-                    <label for="pda_provider_id">Gestore</label>
-                    <select name="pda_provider_id" id="pda_provider_id" required>
-                        <option value="">-- Seleziona gestore --</option>
-                        <?php foreach ($availableProviders as $provider): ?>
-                            <?php $providerId = (int) ($provider['id'] ?? 0); ?>
-                            <option value="<?= $providerId ?>" <?= $prefillCustomer['provider_id'] === $providerId ? 'selected' : '' ?>>
-                                <?= htmlspecialchars((string) ($provider['name'] ?? '')) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                    <form method="post" enctype="multipart/form-data" class="form">
+                        <input type="hidden" name="action" value="upload_pda">
+                        <div class="form__grid">
+                            <div class="form__group">
+                                <label for="pda_provider_id">Gestore</label>
+                                <select name="pda_provider_id" id="pda_provider_id" required>
+                                    <option value="">-- Seleziona gestore --</option>
+                                    <?php foreach ($availableProviders as $provider): ?>
+                                        <?php $providerId = (int) ($provider['id'] ?? 0); ?>
+                                        <option value="<?= $providerId ?>" <?= $prefillCustomer['provider_id'] === $providerId ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars((string) ($provider['name'] ?? '')) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form__group">
+                                <label for="pda_file">File PDA</label>
+                                <input type="file" name="pda_file" id="pda_file" accept=".pdf,.txt,.csv,.json" required>
+                                <small class="muted">Formati supportati: PDF, TXT, CSV, JSON. Iliad escluso.</small>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn--secondary">Importa PDA</button>
+                    </form>
                 </div>
-                <div class="form__group">
-                    <label for="pda_file">File PDA</label>
-                    <input type="file" name="pda_file" id="pda_file" accept=".pdf,.txt,.csv,.json" required>
-                    <small class="muted">Formati supportati: PDF (richiede pdftotext), TXT, CSV, JSON. Iliad escluso.</small>
-                </div>
-            </div>
-            <button type="submit" class="btn btn--secondary">Importa PDA</button>
-        </form>
+            </article>
+        </div>
     </section>
 
     <div class="sales-layout">
