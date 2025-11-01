@@ -530,21 +530,50 @@ final class PdaImportService
         }
 
         if ($existing !== null) {
-            $payload = [
-                'fullname' => $fullname ?? (string) $existing['fullname'],
-                'email' => $email ?? ($existing['email'] ?? null),
-                'phone' => $phone ?? ($existing['phone'] ?? null),
-                'tax_code' => $taxCode ?? ($existing['tax_code'] ?? null),
-                'note' => $this->mergeNotes($existing['note'] ?? null, $note),
+            $existingSnapshot = [
+                'fullname' => $this->stringOrNull($existing['fullname'] ?? null) ?? '',
+                'email' => $this->stringOrNull($existing['email'] ?? null),
+                'phone' => $this->normalizeMsisdn($existing['phone'] ?? null),
+                'tax_code' => $this->normalizeTaxCode($existing['tax_code'] ?? null),
+                'note' => $this->stringOrNull($existing['note'] ?? null),
             ];
 
-            $result = $this->customerService->update((int) $existing['id'], $payload);
-            if (!($result['success'] ?? false)) {
-                $warnings[] = 'Aggiornamento cliente non riuscito: ' . ($result['message'] ?? 'errore sconosciuto');
+            $payload = [
+                'fullname' => $fullname ?? $existingSnapshot['fullname'],
+                'email' => $email ?? $existingSnapshot['email'],
+                'phone' => $phone ?? $existingSnapshot['phone'],
+                'tax_code' => $taxCode ?? $existingSnapshot['tax_code'],
+                'note' => $this->mergeNotes($existingSnapshot['note'], $note),
+            ];
+
+            $requiresUpdate = false;
+            foreach ($payload as $field => $value) {
+                if (($existingSnapshot[$field] ?? null) !== $value) {
+                    $requiresUpdate = true;
+                    break;
+                }
+            }
+
+            if ($requiresUpdate) {
+                $result = $this->customerService->update((int) $existing['id'], $payload);
+                if (!($result['success'] ?? false)) {
+                    $warnings[] = 'Aggiornamento cliente non riuscito: ' . ($result['message'] ?? 'errore sconosciuto');
+                }
+
+                return [
+                    'status' => ($result['success'] ?? false) ? 'updated' : 'skipped',
+                    'id' => (int) $existing['id'],
+                    'fullname' => $payload['fullname'],
+                    'email' => $payload['email'],
+                    'phone' => $payload['phone'],
+                    'tax_code' => $payload['tax_code'],
+                    'note' => $payload['note'],
+                    'warnings' => $warnings,
+                ];
             }
 
             return [
-                'status' => ($result['success'] ?? false) ? 'updated' : 'skipped',
+                'status' => 'unchanged',
                 'id' => (int) $existing['id'],
                 'fullname' => $payload['fullname'],
                 'email' => $payload['email'],
