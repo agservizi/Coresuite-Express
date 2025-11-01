@@ -249,12 +249,14 @@ final class AuthService
         $label = $user['username'] ?? ('utente-' . $userId);
         $otpauth = $this->buildOtpAuthUrl($issuer, (string) $label, $secret);
         $qrUrl = 'https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=' . rawurlencode($otpauth);
+        $fallbackQr = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' . rawurlencode($otpauth);
 
         return [
             'success' => true,
             'secret' => $secret,
             'otpauth_url' => $otpauth,
             'qr_url' => $qrUrl,
+            'qr_fallback_url' => $fallbackQr,
         ];
     }
 
@@ -289,12 +291,14 @@ final class AuthService
         $label = $user['username'] ?? ('utente-' . $userId);
         $otpauth = $this->buildOtpAuthUrl($issuer, (string) $label, $secret);
         $qrUrl = 'https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=' . rawurlencode($otpauth);
+        $fallbackQr = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' . rawurlencode($otpauth);
 
         return [
             'success' => true,
             'secret' => $secret,
             'otpauth_url' => $otpauth,
             'qr_url' => $qrUrl,
+            'qr_fallback_url' => $fallbackQr,
         ];
     }
 

@@ -75,11 +75,24 @@ $formatDateTime = static function (?string $value): string {
     <?php if ($setupData !== null): ?>
         <section class="page__section">
             <div class="setup-grid">
-                <article class="card">
+                <article class="card" data-qr-container>
                     <h3>1. Scansiona il QR code</h3>
                     <p>Apri Google Authenticator (o un'app compatibile) e scansiona il codice qui sotto.</p>
                     <?php if (!empty($setupData['qr_url'])): ?>
-                        <img src="<?= htmlspecialchars((string) $setupData['qr_url']) ?>" alt="QR code MFA" class="setup-grid__qr">
+                        <img
+                            src="<?= htmlspecialchars((string) $setupData['qr_url']) ?>"
+                            <?php if (!empty($setupData['qr_fallback_url'])): ?>
+                                data-qr-fallback="<?= htmlspecialchars((string) $setupData['qr_fallback_url']) ?>"
+                            <?php endif; ?>
+                            data-qr-image
+                            alt="QR code MFA"
+                            class="setup-grid__qr"
+                        >
+                    <?php endif; ?>
+                    <?php if (!empty($setupData['otpauth_url'])): ?>
+                        <p class="muted">
+                            Se il QR non viene caricato, <a href="<?= htmlspecialchars((string) $setupData['otpauth_url']) ?>" target="_blank" rel="noopener">apri il link otpauth</a> oppure inserisci il codice manualmente.
+                        </p>
                     <?php endif; ?>
                     <?php if (!empty($setupData['secret'])): ?>
                         <p>In alternativa inserisci manualmente questo codice segreto:</p>

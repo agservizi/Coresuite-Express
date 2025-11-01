@@ -255,6 +255,37 @@ class ToastManager {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document
+    .querySelectorAll('[data-qr-image]')
+    .forEach(img => {
+      const fallback = img.getAttribute('data-qr-fallback');
+      if (!fallback) {
+        return;
+      }
+      const markError = () => {
+        img.classList.add('is-qr-error');
+        const host = img.closest('[data-qr-container]') || img.parentElement;
+        if (host && !host.querySelector('[data-qr-error-message]')) {
+          const message = document.createElement('p');
+          message.dataset.qrErrorMessage = 'true';
+          message.className = 'muted';
+          message.textContent = 'Impossibile caricare il codice QR. Usa il codice segreto riportato oppure apri il link otpauth.';
+          host.appendChild(message);
+        }
+      };
+      img.addEventListener('error', () => {
+        if (img.dataset.qrSwapped === '1') {
+          markError();
+          return;
+        }
+        img.dataset.qrSwapped = '1';
+        img.src = fallback;
+      });
+      img.addEventListener('load', () => {
+        img.classList.remove('is-qr-error');
+      });
+    });
+
   const toastContainer = document.querySelector('[data-toast-stack]');
   const toastManager = new ToastManager(toastContainer);
 
