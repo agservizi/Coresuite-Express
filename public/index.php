@@ -159,6 +159,7 @@ use App\Controllers\ProductRequestController;
 use App\Controllers\ReportsController;
 use App\Controllers\SalesController;
 use App\Controllers\SupportRequestController;
+use App\Controllers\SsoController;
 use App\Services\AuthService;
 use App\Services\CustomerService;
 use App\Services\DiscountCampaignService;
@@ -174,6 +175,7 @@ use App\Services\SupportRequestService;
 use App\Services\UserService;
 use App\Services\NotificationDispatcher;
 use App\Services\SystemNotificationService;
+use App\Services\SsoService;
 
 $pdo = Database::getConnection();
 
@@ -234,6 +236,8 @@ $saleNotificationService = new SaleNotificationService(
     $saleNotificationLog,
     $systemNotificationService
 );
+$ssoConfig = $GLOBALS['config']['sso'] ?? [];
+$ssoService = new SsoService($pdo, is_array($ssoConfig) ? $ssoConfig : []);
 
 $authController = new AuthController($authService);
 $iccidController = new ICCIDController($iccidService);
@@ -244,10 +248,67 @@ $productController = new ProductController($productService);
 $productRequestController = new ProductRequestController($productRequestService);
 $salesController = new SalesController($salesService, $discountCampaignService, $saleNotificationService);
 $supportRequestController = new SupportRequestController($supportRequestService);
+$ssoController = new SsoController($ssoService);
 
 $page = $_GET['page'] ?? 'dashboard';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $currentUser = $authService->currentUser();
+
+if ($page === 'sso_token') {
+    if ($method !== 'POST') {
+        http_response_code(405);
+        header('Allow: POST');
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'method_not_allowed']);
+        exit;
+    }
+
+    $input = $_POST;
+    if ($input === [] && isset($_SERVER['CONTENT_TYPE']) && str_contains((string) $_SERVER['CONTENT_TYPE'], 'application/json')) {
+        $rawBody = file_get_contents('php://input');
+        $decoded = json_decode($rawBody ?: '{}', true);
+        if (is_array($decoded)) {
+            $input = $decoded;
+        }
+    }
+
+    $response = $ssoController->token($input);
+    http_response_code($response['status']);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($response['body']);
+    exit;
+}
+
+if ($page === 'sso_authorize') {
+    if (!$ssoService->isEnabled()) {
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'sso_disabled']);
+        exit;
+    }
+
+    if ($currentUser === null) {
+        $query = $_GET;
+        $query['page'] = 'sso_authorize';
+        $queryString = http_build_query($query);
+        $_SESSION['login_redirect'] = 'index.php' . ($queryString !== '' ? '?' . $queryString : '');
+        header('Location: index.php?page=login');
+        exit;
+    }
+
+    $result = $ssoController->authorize($_GET, $currentUser);
+    if (!($result['success'] ?? false)) {
+        http_response_code($result['status'] ?? 400);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'error' => $result['error'] ?? 'Operazione non riuscita.',
+        ]);
+        exit;
+    }
+
+    header('Location: ' . $result['redirect']);
+    exit;
+}
 
 if ($page === 'logout') {
     $authController->logout();
@@ -256,7 +317,12 @@ if ($page === 'logout') {
 if ($page === 'login' && $method === 'POST') {
     $result = $authController->login($_POST);
     if ($result['success']) {
-        header('Location: index.php');
+        $pending = $_SESSION['login_redirect'] ?? null;
+        unset($_SESSION['login_redirect']);
+        $target = is_string($pending) && $pending !== ''
+            ? sanitizeInternalUrl($pending, 'index.php')
+            : 'index.php';
+        header('Location: ' . $target);
         exit;
     }
 
@@ -273,7 +339,7 @@ if ($page === 'login' && $method === 'POST') {
     exit;
 }
 
-if ($currentUser === null && !in_array($page, ['login', 'login_mfa'], true)) {
+if ($currentUser === null && !in_array($page, ['login', 'login_mfa', 'sso_authorize', 'sso_token'], true)) {
     header('Location: index.php?page=login');
     exit;
 }
@@ -955,6 +1021,11 @@ switch ($page) {
     case 'settings':
         $feedback = $_SESSION['settings_feedback'] ?? null;
         unset($_SESSION['settings_feedback']);
+        $ssoFeedback = $_SESSION['settings_sso_feedback'] ?? null;
+        unset($_SESSION['settings_sso_feedback']);
+        $ssoSecretPreview = $_SESSION['settings_sso_secret'] ?? null;
+        unset($_SESSION['settings_sso_secret']);
+        $ssoEnabled = $ssoService->isEnabled();
         $isAdmin = $authService->hasRole('admin');
 
         $operatorEdit = null;
@@ -988,6 +1059,20 @@ switch ($page) {
         }
 
         $fiscalOpen = isset($_GET['fiscal_open']);
+        $ssoOpen = isset($_GET['sso_open']);
+        $ssoClients = [];
+        if ($ssoEnabled) {
+            try {
+                $ssoClients = $ssoService->listClients();
+            } catch (\Throwable $exception) {
+                if ($ssoFeedback === null) {
+                    $ssoFeedback = [
+                        'success' => false,
+                        'message' => 'Impossibile caricare i client SSO: ' . $exception->getMessage(),
+                    ];
+                }
+            }
+        }
 
         if ($method === 'POST') {
             $action = $_POST['action'] ?? '';
@@ -1113,6 +1198,111 @@ switch ($page) {
                         : ($result['error'] ?? 'Impossibile disattivare l’MFA per l’operatore.');
                 }
                 $redirectParams['operators_open'] = 1;
+            } elseif ($action === 'sso_create_client') {
+                $redirectParams['sso_open'] = 1;
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono creare client SSO.',
+                    ];
+                } elseif (!$ssoEnabled) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'SSO non configurato.',
+                        'error' => 'Configura SSO_SHARED_SECRET per abilitare l\'SSO interno.',
+                    ];
+                } else {
+                    $clientName = trim((string) ($_POST['sso_client_name'] ?? ''));
+                    $clientRedirect = trim((string) ($_POST['sso_redirect_uri'] ?? ''));
+                    $creation = $ssoService->createClient($clientName, $clientRedirect, true);
+                    $result = $creation;
+                    if (($creation['success'] ?? false) && isset($creation['client_secret'])) {
+                        $_SESSION['settings_sso_secret'] = [
+                            'client_id' => $creation['client_id'] ?? '',
+                            'client_secret' => $creation['client_secret'],
+                        ];
+                        $result['message'] = 'Client SSO creato. Annota il secret generato: sarà mostrato una sola volta.';
+                    }
+                }
+                $_SESSION['settings_sso_feedback'] = $result;
+            } elseif ($action === 'sso_rotate_client_secret') {
+                $redirectParams['sso_open'] = 1;
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono rigenerare i secret SSO.',
+                    ];
+                } elseif (!$ssoEnabled) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'SSO non configurato.',
+                        'error' => 'Configura SSO_SHARED_SECRET per usare il single sign-on interno.',
+                    ];
+                } else {
+                    $clientRowId = isset($_POST['client_id']) ? (int) $_POST['client_id'] : 0;
+                    if ($clientRowId <= 0) {
+                        $result = [
+                            'success' => false,
+                            'message' => 'Client SSO non valido.',
+                        ];
+                    } else {
+                        $label = trim((string) ($_POST['client_label'] ?? ''));
+                        $identifier = trim((string) ($_POST['client_identifier'] ?? ''));
+                        $rotation = $ssoService->rotateClientSecret($clientRowId);
+                        $result = $rotation;
+                        if (($rotation['success'] ?? false) && isset($rotation['client_secret'])) {
+                            $_SESSION['settings_sso_secret'] = [
+                                'client_id' => $identifier,
+                                'client_secret' => $rotation['client_secret'],
+                            ];
+                            $name = $label !== '' ? $label : $identifier;
+                            $result['message'] = 'Secret rigenerato per il client ' . ($name !== '' ? $name : 'selezionato') . '. Annota il nuovo valore.';
+                        }
+                    }
+                }
+                $_SESSION['settings_sso_feedback'] = $result;
+            } elseif ($action === 'sso_toggle_client') {
+                $redirectParams['sso_open'] = 1;
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono modificare lo stato dei client SSO.',
+                    ];
+                } elseif (!$ssoEnabled) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'SSO non configurato.',
+                        'error' => 'Configura SSO_SHARED_SECRET per usare il single sign-on interno.',
+                    ];
+                } else {
+                    $clientRowId = isset($_POST['client_id']) ? (int) $_POST['client_id'] : 0;
+                    $targetStatus = isset($_POST['target_status']) ? ((int) $_POST['target_status'] === 1) : false;
+                    $toggle = $ssoService->setClientStatus($clientRowId, $targetStatus);
+                    $result = $toggle;
+                }
+                $_SESSION['settings_sso_feedback'] = $result;
+            } elseif ($action === 'sso_delete_client') {
+                $redirectParams['sso_open'] = 1;
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono eliminare client SSO.',
+                    ];
+                } elseif (!$ssoEnabled) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'SSO non configurato.',
+                        'error' => 'Configura SSO_SHARED_SECRET per usare il single sign-on interno.',
+                    ];
+                } else {
+                    $clientRowId = isset($_POST['client_id']) ? (int) $_POST['client_id'] : 0;
+                    $result = $ssoService->deleteClient($clientRowId);
+                }
+                $_SESSION['settings_sso_feedback'] = $result;
             } else {
                 $result = [
                     'success' => false,
@@ -1187,6 +1377,12 @@ switch ($page) {
             'auditPagination' => $auditLogsResult['pagination'],
             'buildAuditPageUrl' => $buildAuditPageUrl,
             'auditOpen' => $auditOpen,
+            'ssoEnabled' => $ssoEnabled,
+            'ssoClients' => $ssoClients,
+            'ssoFeedback' => $ssoFeedback,
+            'ssoSecretPreview' => $ssoSecretPreview,
+            'ssoOpen' => $ssoOpen,
+            'ssoTokenTtl' => $ssoService->getTokenTtl(),
         ]);
         break;
 

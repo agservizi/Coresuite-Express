@@ -148,6 +148,9 @@ $notificationQueueExchange = $getEnv('NOTIFICATIONS_QUEUE_EXCHANGE', 'coresuite.
 $notificationQueueRoutingKey = $getEnv('NOTIFICATIONS_QUEUE_ROUTING_KEY', 'event');
 $notificationQueueName = $getEnv('NOTIFICATIONS_QUEUE_NAME');
 $notificationTopbarLimit = (int) ($getEnv('NOTIFICATIONS_TOPBAR_LIMIT', '10'));
+$ssoIssuer = $getEnv('SSO_ISSUER', 'coresuite-express');
+$ssoSharedSecret = $getEnv('SSO_SHARED_SECRET');
+$ssoTokenTtl = (int) ($getEnv('SSO_TOKEN_TTL', '3600'));
 
 $dsn = sprintf(
     'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
@@ -198,6 +201,13 @@ $configCache = [
         'webhook_headers' => $notificationWebhookHeaders,
         'queue' => $notificationQueueConfig,
         'topbar_limit' => $notificationTopbarLimit > 0 ? min($notificationTopbarLimit, 30) : 10,
+    ],
+    'sso' => [
+        'enabled' => is_string($ssoSharedSecret) && $ssoSharedSecret !== '',
+        'issuer' => $ssoIssuer,
+        'shared_secret' => $ssoSharedSecret,
+        'token_ttl' => $ssoTokenTtl > 0 ? $ssoTokenTtl : 3600,
+        'code_ttl' => 300,
     ],
 ];
 

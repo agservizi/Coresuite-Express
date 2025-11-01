@@ -18,6 +18,12 @@ declare(strict_types=1);
  * @var array<string, mixed>|null $operatorEditForm
  * @var bool|null $operatorsOpen
  * @var bool $fiscalOpen
+ * @var bool $ssoEnabled
+ * @var array<int, array<string, mixed>> $ssoClients
+ * @var array{success:bool, message:string, error?:string}|null $ssoFeedback
+ * @var array{client_id:string, client_secret:string}|null $ssoSecretPreview
+ * @var bool $ssoOpen
+ * @var int $ssoTokenTtl
  */
 $pageTitle = $pageTitle ?? 'Impostazioni';
 $roles = $roles ?? [];
@@ -46,6 +52,12 @@ $operatorsOpen = is_bool($operatorsOpenProp)
     ? $operatorsOpenProp
     : ($isAdmin && $feedback !== null && ($feedback['success'] ?? false) === false && ! $inventoryOpen);
 $fiscalOpen = isset($fiscalOpen) ? (bool) $fiscalOpen : false;
+$ssoEnabled = isset($ssoEnabled) ? (bool) $ssoEnabled : false;
+$ssoClients = isset($ssoClients) && is_array($ssoClients) ? $ssoClients : [];
+$ssoFeedback = isset($ssoFeedback) && is_array($ssoFeedback) ? $ssoFeedback : null;
+$ssoSecretPreview = isset($ssoSecretPreview) && is_array($ssoSecretPreview) ? $ssoSecretPreview : null;
+$ssoOpen = isset($ssoOpen) ? (bool) $ssoOpen : false;
+$ssoTokenTtl = isset($ssoTokenTtl) ? (int) $ssoTokenTtl : 0;
 if (!$fiscalOpen && $feedback !== null) {
     $messagesToInspect = [];
     if (isset($feedback['message'])) {
@@ -67,6 +79,7 @@ if (!$fiscalOpen && $feedback !== null) {
     }
 }
 $campaignsOpen = $feedback !== null && isset($feedback['message']) && strpos((string) $feedback['message'], 'Campagna') !== false;
+$ssoOpen = $ssoOpen || $ssoFeedback !== null;
 $auditCurrentPage = max(1, (int) ($auditPagination['page'] ?? 1));
 $totalAuditPages = max(1, (int) ($auditPagination['pages'] ?? 1));
 $totalAuditEvents = max(0, (int) ($auditPagination['total'] ?? count($auditLogs)));
@@ -394,6 +407,134 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                             <?php endif; ?>
                         </section>
                     </div>
+                <?php endif; ?>
+            </div>
+        </article>
+
+        <article class="settings-accordion__item" data-accordion data-open="<?= $ssoOpen ? 'true' : 'false' ?>">
+            <button type="button" class="settings-accordion__toggle" data-accordion-toggle aria-expanded="<?= $ssoOpen ? 'true' : 'false' ?>">
+                <span class="settings-accordion__title">Single sign-on interno</span>
+                <span class="settings-accordion__icon" aria-hidden="true"></span>
+            </button>
+            <div class="settings-accordion__content" data-accordion-content <?= $ssoOpen ? '' : 'hidden' ?>>
+                <?php if (!$isAdmin): ?>
+                    <p class="muted">Solo gli amministratori possono gestire il single sign-on.</p>
+                <?php elseif (!$ssoEnabled): ?>
+                    <p class="muted">Per attivare l'SSO interno imposta la variabile <code>SSO_SHARED_SECRET</code> nel file <code>.env</code> e riavvia l'applicazione. Il secret viene usato per firmare i token JWT.</p>
+                <?php else: ?>
+                    <?php if ($ssoFeedback !== null): ?>
+                        <section class="page__section">
+                            <div class="alert <?= ($ssoFeedback['success'] ?? false) ? 'alert--success' : 'alert--error' ?>">
+                                <p><?= htmlspecialchars($ssoFeedback['message'] ?? '') ?></p>
+                                <?php if (!empty($ssoFeedback['error'])): ?>
+                                    <p class="muted">Dettaglio: <?= htmlspecialchars((string) $ssoFeedback['error']) ?></p>
+                                <?php endif; ?>
+                            </div>
+                        </section>
+                    <?php endif; ?>
+
+                    <?php if ($ssoSecretPreview !== null && !empty($ssoSecretPreview['client_secret'])): ?>
+                        <section class="page__section">
+                            <article class="card card--highlight">
+                                <h4>Secret generato</h4>
+                                <p>Copia questi valori e conservali in un password manager: non saranno più mostrati.</p>
+                                <ul class="key-list">
+                                    <li><strong>Client ID:</strong> <code><?= htmlspecialchars((string) ($ssoSecretPreview['client_id'] ?? '')) ?></code></li>
+                                    <li><strong>Client secret:</strong> <code><?= htmlspecialchars((string) $ssoSecretPreview['client_secret']) ?></code></li>
+                                </ul>
+                            </article>
+                        </section>
+                    <?php endif; ?>
+
+                    <section class="settings-operators__panel">
+                        <h4>Registra un'applicazione</h4>
+                        <p class="muted">Crea un client da condividere con i servizi interni che devono delegare l'autenticazione.</p>
+                        <form method="post" class="form settings-form">
+                            <input type="hidden" name="action" value="sso_create_client">
+                            <div class="settings-form__grid">
+                                <div class="settings-form__field">
+                                    <label for="sso_client_name">Nome applicazione</label>
+                                    <input type="text" id="sso_client_name" name="sso_client_name" maxlength="100" required>
+                                </div>
+                                <div class="settings-form__field">
+                                    <label for="sso_redirect_uri">Redirect URI autorizzato</label>
+                                    <input type="url" id="sso_redirect_uri" name="sso_redirect_uri" placeholder="https://servizio.interno/callback" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn--primary">Genera client</button>
+                        </form>
+                        <p class="muted">I token di accesso emessi durano circa <?= $ssoTokenTtl > 0 ? (int) floor($ssoTokenTtl / 60) : 0 ?> minuti. Usa l'endpoint <code>index.php?page=sso_authorize</code> per avviare il flusso OAuth2/PKCE e <code>index.php?page=sso_token</code> per lo scambio codice-token.</p>
+                    </section>
+
+                    <section class="settings-operators__panel">
+                        <h4>Client registrati</h4>
+                        <?php if (empty($ssoClients)): ?>
+                            <p class="muted">Nessun client configurato. Crea il primo per abilitare l'SSO.</p>
+                        <?php else: ?>
+                            <div class="table-wrapper table-wrapper--embedded">
+                                <table class="table table--compact">
+                                    <thead>
+                                        <tr>
+                                            <th>Nome</th>
+                                            <th>Client ID</th>
+                                            <th>Redirect URI</th>
+                                            <th>Confidenziale</th>
+                                            <th>Stato</th>
+                                            <th>Creato il</th>
+                                            <th class="table__col--actions">Azioni</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($ssoClients as $client): ?>
+                                            <?php
+                                                $clientRowId = (int) ($client['id'] ?? 0);
+                                                $clientIdentifier = (string) ($client['client_id'] ?? '');
+                                                $clientName = trim((string) ($client['name'] ?? ''));
+                                                $clientRedirect = trim((string) ($client['redirect_uri'] ?? ''));
+                                                $isActiveClient = (int) ($client['is_active'] ?? 0) === 1;
+                                                $isConfidential = (int) ($client['is_confidential'] ?? 1) === 1;
+                                                $createdAt = !empty($client['created_at']) ? date('d/m/Y H:i', strtotime((string) $client['created_at'])) : 'n/d';
+                                            ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars($clientName !== '' ? $clientName : 'Client #' . $clientRowId) ?></td>
+                                                <td><code><?= htmlspecialchars($clientIdentifier) ?></code></td>
+                                                <td><?= htmlspecialchars($clientRedirect) ?></td>
+                                                <td><?= $isConfidential ? 'Sì' : 'No' ?></td>
+                                                <td>
+                                                    <span class="badge <?= $isActiveClient ? 'badge--success' : 'badge--muted' ?>">
+                                                        <?= $isActiveClient ? 'Attivo' : 'Disattivato' ?>
+                                                    </span>
+                                                </td>
+                                                <td><?= htmlspecialchars($createdAt) ?></td>
+                                                <td class="table__col--actions">
+                                                    <div class="table-actions">
+                                                        <form method="post" class="inline-form" onsubmit="return confirm('Rigenerare il secret per questo client?');">
+                                                            <input type="hidden" name="action" value="sso_rotate_client_secret">
+                                                            <input type="hidden" name="client_id" value="<?= $clientRowId ?>">
+                                                            <input type="hidden" name="client_identifier" value="<?= htmlspecialchars($clientIdentifier) ?>">
+                                                            <input type="hidden" name="client_label" value="<?= htmlspecialchars($clientName) ?>">
+                                                            <button type="submit" class="btn btn--secondary btn--small">Rigenera secret</button>
+                                                        </form>
+                                                        <form method="post" class="inline-form">
+                                                            <input type="hidden" name="action" value="sso_toggle_client">
+                                                            <input type="hidden" name="client_id" value="<?= $clientRowId ?>">
+                                                            <input type="hidden" name="target_status" value="<?= $isActiveClient ? '0' : '1' ?>">
+                                                            <button type="submit" class="btn btn--secondary btn--small"><?= $isActiveClient ? 'Disattiva' : 'Attiva' ?></button>
+                                                        </form>
+                                                        <form method="post" class="inline-form" onsubmit="return confirm('Eliminare definitivamente questo client SSO?');">
+                                                            <input type="hidden" name="action" value="sso_delete_client">
+                                                            <input type="hidden" name="client_id" value="<?= $clientRowId ?>">
+                                                            <button type="submit" class="btn btn--danger btn--small">Elimina</button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </section>
                 <?php endif; ?>
             </div>
         </article>
