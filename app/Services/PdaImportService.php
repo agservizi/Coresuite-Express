@@ -417,6 +417,8 @@ final class PdaImportService
     {
         $warnings = [];
 
+        $isFastweb = $this->isFastwebProvider($providerName);
+
         $customer = [
             'fullname' => $this->matchFirst($text, self::FIELD_ALIASES['customer_fullname']),
             'email' => $this->matchFirst($text, self::FIELD_ALIASES['customer_email']),
@@ -424,6 +426,13 @@ final class PdaImportService
             'tax_code' => $this->normalizeTaxCode($this->matchFirst($text, self::FIELD_ALIASES['customer_tax_code'])),
             'note' => null,
         ];
+
+        if ($isFastweb) {
+            $fastwebName = $this->extractFastwebCustomerName($text);
+            if ($fastwebName !== null) {
+                $customer['fullname'] = $fastwebName;
+            }
+        }
 
         $address = $this->matchFirst($text, self::FIELD_ALIASES['customer_address']);
         if ($address !== null) {
@@ -437,7 +446,6 @@ final class PdaImportService
 
         $items = [];
         $rowCount = max(count($iccids), count($plans), count($msisdnList));
-        $isFastweb = $this->isFastwebProvider($providerName);
         $fastwebSeen = [];
         $fastwebDuplicates = 0;
         for ($i = 0; $i < $rowCount; $i++) {
@@ -643,6 +651,33 @@ final class PdaImportService
     private function isFastwebProvider(string $providerName): bool
     {
         return stripos($providerName, 'fastweb') !== false;
+    }
+
+    private function extractFastwebCustomerName(string $text): ?string
+    {
+        $patterns = [
+            '/Proposta\s+di\s+abbonamento\s*[:\-]?\s*(.+)/i',
+            '/Proposta\s+di\s+abbonamento\s*(?:\n|\r\n)(.+)/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $text, $matches)) {
+                $candidate = trim((string) ($matches[1] ?? ''));
+                if ($candidate === '') {
+                    continue;
+                }
+
+                $candidate = preg_split('/\r?\n/', $candidate)[0] ?? $candidate;
+                $candidate = preg_replace('/\b(?:Codice\s+Fiscale|CF|P\.IVA|Mobile\s+Number\s+Portability)\b.*$/i', '', $candidate) ?? $candidate;
+                $candidate = trim($candidate, " \t.:,;-");
+
+                if ($candidate !== '') {
+                    return $candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
