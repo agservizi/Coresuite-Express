@@ -151,6 +151,21 @@ $notificationTopbarLimit = (int) ($getEnv('NOTIFICATIONS_TOPBAR_LIMIT', '10'));
 $ssoIssuer = $getEnv('SSO_ISSUER', 'coresuite-express');
 $ssoSharedSecret = $getEnv('SSO_SHARED_SECRET');
 $ssoTokenTtl = (int) ($getEnv('SSO_TOKEN_TTL', '3600'));
+$coresuiteBaseUrl = $getEnv('CORESUITE_BASE_URL');
+$coresuiteApiKey = $getEnv('CORESUITE_API_KEY');
+$coresuiteTenant = $getEnv('CORESUITE_TENANT');
+$coresuiteWebhookSecret = $getEnv('CORESUITE_WEBHOOK_SECRET');
+$coresuiteEndpoints = $getEnv('CORESUITE_ENDPOINTS');
+$paymentGatewayBaseUrl = $getEnv('PAYMENT_GATEWAY_BASE_URL');
+$paymentGatewayApiKey = $getEnv('PAYMENT_GATEWAY_API_KEY');
+$paymentGatewayEndpoints = $getEnv('PAYMENT_GATEWAY_ENDPOINTS');
+$ticketingBaseUrl = $getEnv('TICKETING_BASE_URL');
+$ticketingApiKey = $getEnv('TICKETING_API_KEY');
+$ticketingAccountId = $getEnv('TICKETING_ACCOUNT_ID');
+$ticketingEndpoints = $getEnv('TICKETING_ENDPOINTS');
+$digitalSignatureBaseUrl = $getEnv('DIGITAL_SIGNATURE_BASE_URL');
+$digitalSignatureApiKey = $getEnv('DIGITAL_SIGNATURE_API_KEY');
+$digitalSignatureEndpoints = $getEnv('DIGITAL_SIGNATURE_ENDPOINTS');
 
 $dsn = sprintf(
     'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
@@ -208,6 +223,31 @@ $configCache = [
         'shared_secret' => $ssoSharedSecret,
         'token_ttl' => $ssoTokenTtl > 0 ? $ssoTokenTtl : 3600,
         'code_ttl' => 300,
+    ],
+    'integrations' => [
+        'coresuite' => [
+            'base_url' => $coresuiteBaseUrl,
+            'api_key' => $coresuiteApiKey,
+            'tenant' => $coresuiteTenant,
+            'webhook_secret' => $coresuiteWebhookSecret,
+            'endpoints' => $coresuiteEndpoints !== null ? (json_decode($coresuiteEndpoints, true) ?: null) : null,
+        ],
+        'payments' => [
+            'base_url' => $paymentGatewayBaseUrl,
+            'api_key' => $paymentGatewayApiKey,
+            'endpoints' => $paymentGatewayEndpoints !== null ? (json_decode($paymentGatewayEndpoints, true) ?: null) : null,
+        ],
+        'ticketing' => [
+            'base_url' => $ticketingBaseUrl,
+            'api_key' => $ticketingApiKey,
+            'account_id' => $ticketingAccountId,
+            'endpoints' => $ticketingEndpoints !== null ? (json_decode($ticketingEndpoints, true) ?: null) : null,
+        ],
+        'digital_signature' => [
+            'base_url' => $digitalSignatureBaseUrl,
+            'api_key' => $digitalSignatureApiKey,
+            'endpoints' => $digitalSignatureEndpoints !== null ? (json_decode($digitalSignatureEndpoints, true) ?: null) : null,
+        ],
     ],
 ];
 

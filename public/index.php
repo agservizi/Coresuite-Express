@@ -183,6 +183,7 @@ use App\Services\NotificationDispatcher;
 use App\Services\SystemNotificationService;
 use App\Services\SsoService;
 use App\Services\PdaImportService;
+use App\Services\Integrations\IntegrationService;
 
 $pdo = Database::getConnection();
 
@@ -218,18 +219,23 @@ $notificationDispatcher = new NotificationDispatcher(
 $systemNotificationService = new SystemNotificationService($pdo, $notificationDispatcher, $notificationsLog);
 $GLOBALS['systemNotificationService'] = $systemNotificationService;
 
+$integrationsConfig = $GLOBALS['config']['integrations'] ?? [];
+require_once __DIR__ . '/../app/bootstrap/integrations.php';
+$integrationService = bootstrapIntegrationService(is_array($integrationsConfig) ? $integrationsConfig : []);
+$GLOBALS['integrationService'] = $integrationService;
+
 if ($saleFulfilmentEmail === null || !filter_var($saleFulfilmentEmail, FILTER_VALIDATE_EMAIL)) {
     $saleFulfilmentEmail = $alertEmail;
 }
 
 $authService = new AuthService($pdo);
 $iccidService = new ICCIDService($pdo);
-$customerService = new CustomerService($pdo, $resendApiKey, $resendFrom, $appName, $portalLoginUrl, $resendFromName);
+$customerService = new CustomerService($pdo, $resendApiKey, $resendFrom, $appName, $portalLoginUrl, $resendFromName, $integrationService);
 $offersService = new OffersService($pdo);
 $reportsService = new ReportsService($pdo);
-$productService = new ProductService($pdo);
+$productService = new ProductService($pdo, $integrationService);
 $productRequestService = new ProductRequestService($pdo);
-$salesService = new SalesService($pdo);
+$salesService = new SalesService($pdo, $integrationService);
 $discountCampaignService = new DiscountCampaignService($pdo);
 $pdaImportService = new PdaImportService($pdo, $customerService);
 $supportRequestService = new SupportRequestService($pdo);

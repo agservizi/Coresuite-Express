@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\CustomerPortalAuthService;
+use App\Services\Integrations\IntegrationService;
 use PDO;
 use PDOException;
 use RuntimeException;
@@ -19,7 +20,8 @@ final class CustomerService
 		private ?string $resendFrom = null,
 		private ?string $appName = null,
 		private ?string $portalUrl = null,
-		private ?string $resendFromName = null
+		private ?string $resendFromName = null,
+		private ?IntegrationService $integrationService = null
 	) {
 	}
 
@@ -159,6 +161,13 @@ final class CustomerService
 			);
 		}
 
+		if ($this->integrationService !== null) {
+			$record = $this->find($customerId);
+			if ($record !== null) {
+				$this->integrationService->syncCustomer($record);
+			}
+		}
+
 		return [
 			'success' => true,
 			'id' => $customerId,
@@ -252,6 +261,13 @@ final class CustomerService
 			}
 		}
 
+		if ($this->integrationService !== null) {
+			$record = $this->find($customerId);
+			if ($record !== null) {
+				$this->integrationService->syncCustomer($record);
+			}
+		}
+
 		return [
 			'success' => true,
 			'message' => $message,
@@ -293,6 +309,10 @@ final class CustomerService
 				'message' => 'Errore durante l\'eliminazione del cliente.',
 				'errors' => ['Database: ' . $exception->getMessage()],
 			];
+		}
+
+		if ($this->integrationService !== null) {
+			$this->integrationService->removeCustomer($customerId);
 		}
 
 		return [

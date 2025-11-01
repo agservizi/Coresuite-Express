@@ -3,12 +3,13 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Integrations\IntegrationService;
 use PDO;
 use PDOException;
 
 final class ProductService
 {
-    public function __construct(private PDO $pdo)
+    public function __construct(private PDO $pdo, private ?IntegrationService $integrationService = null)
     {
     }
 
@@ -182,7 +183,9 @@ final class ProductService
             }
         }
 
-        try {
+    $productId = null;
+
+    try {
             $this->pdo->beginTransaction();
 
             $stmt = $this->pdo->prepare(
@@ -227,6 +230,13 @@ final class ProductService
                 'message' => 'Errore durante il salvataggio del prodotto.',
                 'errors' => ['Database: ' . $e->getMessage()],
             ];
+        }
+
+        if ($this->integrationService !== null && $productId !== null) {
+            $record = $this->findById($productId);
+            if ($record !== null) {
+                $this->integrationService->syncProduct($record);
+            }
         }
 
         return [
@@ -384,6 +394,13 @@ final class ProductService
             ];
         }
 
+        if ($this->integrationService !== null) {
+            $record = $this->findById($id);
+            if ($record !== null) {
+                $this->integrationService->syncProduct($record);
+            }
+        }
+
         return [
             'success' => true,
             'message' => 'Prodotto aggiornato correttamente.',
@@ -442,6 +459,13 @@ final class ProductService
         ]);
 
         $updated = $stmt->rowCount() > 0;
+
+        if ($updated && $this->integrationService !== null) {
+            $record = $this->findById($productId);
+            if ($record !== null) {
+                $this->integrationService->syncProduct($record);
+            }
+        }
 
         return [
             'success' => true,

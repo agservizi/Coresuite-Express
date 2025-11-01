@@ -3,11 +3,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Integrations\IntegrationService;
 use PDO;
 
 final class SalesService
 {
-    public function __construct(private PDO $pdo)
+    public function __construct(private PDO $pdo, private ?IntegrationService $integrationService = null)
     {
     }
 
@@ -450,6 +451,43 @@ final class SalesService
             ]);
 
             $this->pdo->commit();
+
+            if ($this->integrationService !== null) {
+                $saleData = $this->getSaleWithItems($saleId);
+                if (is_array($saleData)) {
+                    $items = is_array($saleData['items'] ?? null) ? $saleData['items'] : [];
+                    unset($saleData['items']);
+                    $this->integrationService->syncSale($saleData, $items);
+
+                    $customerEmail = isset($saleData['customer_email']) ? trim((string) $saleData['customer_email']) : '';
+                    if ($customerEmail !== '') {
+                        $signatureItems = [];
+                        foreach ($items as $item) {
+                            if (!is_array($item)) {
+                                continue;
+                            }
+                            $signatureItems[] = [
+                                'description' => $item['description'] ?? null,
+                                'quantity' => isset($item['quantity']) ? (int) $item['quantity'] : 1,
+                                'unit_price' => isset($item['price']) ? (float) $item['price'] : 0.0,
+                            ];
+                        }
+
+                        $this->integrationService->requestSignature([
+                            'external_id' => 'signature-sale-' . $saleId,
+                            'sale_external_id' => 'sale-' . $saleId,
+                            'document_type' => 'sale_receipt',
+                            'title' => 'Conferma vendita #' . $saleId,
+                            'customer_name' => $saleData['customer_name'] ?? ($saleData['customer_fullname'] ?? null),
+                            'customer_email' => $customerEmail,
+                            'total' => isset($saleData['total']) ? (float) $saleData['total'] : null,
+                            'reported_at' => date('c'),
+                            'items' => $signatureItems,
+                        ]);
+                    }
+                }
+            }
+
             return $saleId;
         } catch (\Throwable $exception) {
             $this->pdo->rollBack();
@@ -547,6 +585,15 @@ final class SalesService
             ]);
 
             $this->pdo->commit();
+
+            if ($this->integrationService !== null) {
+                $saleData = $this->getSaleWithItems($saleId);
+                if (is_array($saleData)) {
+                    $items = is_array($saleData['items'] ?? null) ? $saleData['items'] : [];
+                    unset($saleData['items']);
+                    $this->integrationService->syncSale($saleData, $items);
+                }
+            }
         } catch (\Throwable $exception) {
             $this->pdo->rollBack();
             throw $exception;
@@ -765,6 +812,15 @@ final class SalesService
             ]);
 
             $this->pdo->commit();
+
+            if ($this->integrationService !== null) {
+                $saleData = $this->getSaleWithItems($saleId);
+                if (is_array($saleData)) {
+                    $items = is_array($saleData['items'] ?? null) ? $saleData['items'] : [];
+                    unset($saleData['items']);
+                    $this->integrationService->syncSale($saleData, $items);
+                }
+            }
         } catch (\Throwable $exception) {
             $this->pdo->rollBack();
             throw $exception;

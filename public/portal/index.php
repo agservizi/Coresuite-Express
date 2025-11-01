@@ -4,6 +4,7 @@ declare(strict_types=1);
 session_start();
 
 require __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../app/bootstrap/integrations.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'App\\';
@@ -37,10 +38,14 @@ $notificationDispatcher = new NotificationDispatcher(
     $notificationsLog
 );
 $systemNotificationService = new SystemNotificationService($pdo, $notificationDispatcher, $notificationsLog);
-$salesService = new SalesService($pdo);
-$productService = new ProductService($pdo);
+$portalIntegrationsConfig = isset($GLOBALS['config']['integrations']) && is_array($GLOBALS['config']['integrations'])
+    ? $GLOBALS['config']['integrations']
+    : [];
+$portalIntegrationService = bootstrapIntegrationService($portalIntegrationsConfig);
+$salesService = new SalesService($pdo, $portalIntegrationService);
+$productService = new ProductService($pdo, $portalIntegrationService);
 $authService = new CustomerPortalAuthService($pdo);
-$portalService = new CustomerPortalService($pdo, $salesService, $productService, $systemNotificationService);
+$portalService = new CustomerPortalService($pdo, $salesService, $productService, $systemNotificationService, $portalIntegrationService);
 $privacyPolicyService = new PrivacyPolicyService($pdo);
 $portalController = new CustomerPortalController($authService, $portalService);
 $privacyPolicyController = new PrivacyPolicyController($privacyPolicyService);

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Integrations\IntegrationService;
 use DateTimeImmutable;
 use PDO;
 use PDOException;
@@ -16,7 +17,8 @@ final class CustomerPortalService
         private PDO $pdo,
         private SalesService $salesService,
         private ProductService $productService,
-        private ?SystemNotificationService $notificationService = null
+        private ?SystemNotificationService $notificationService = null,
+        private ?IntegrationService $integrationService = null
     ) {
     }
 
@@ -709,6 +711,23 @@ final class CustomerPortalService
                 'warning',
                 'index.php?page=sales_list'
             );
+
+            if ($this->integrationService !== null) {
+                $this->integrationService->createPaymentIntent([
+                    'external_id' => 'payment-' . $paymentId,
+                    'sale_external_id' => 'sale-' . $saleId,
+                    'sale_id' => $saleId,
+                    'customer_id' => $customerId,
+                    'portal_account_id' => $portalAccountId,
+                    'amount' => $amount,
+                    'payment_method' => $method,
+                    'status' => 'Pending',
+                    'note' => $note,
+                    'reported_at' => date('c'),
+                    'customer_name' => $customerName,
+                    'customer_email' => $portalEmail,
+                ]);
+            }
         } catch (PDOException $exception) {
             return [
                 'success' => false,
@@ -875,6 +894,22 @@ final class CustomerPortalService
                 'info',
                 'index.php?page=support_requests'
             );
+
+            if ($this->integrationService !== null) {
+                $this->integrationService->pushSupportTicket([
+                    'external_id' => 'support-' . $supportRequestId,
+                    'customer_id' => $customerId,
+                    'portal_account_id' => $portalAccountId,
+                    'customer_name' => $customerName,
+                    'customer_email' => $portalEmail,
+                    'subject' => $subject,
+                    'message' => $message,
+                    'type' => $type,
+                    'preferred_slot' => $slotValue,
+                    'status' => 'Open',
+                    'reported_at' => date('c'),
+                ]);
+            }
         } catch (PDOException $exception) {
             return [
                 'success' => false,
