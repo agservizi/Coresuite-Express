@@ -215,4 +215,109 @@ final class ICCIDService
             'message' => 'SIM aggiunta correttamente al magazzino.',
         ];
     }
+
+    /**
+     * @param array<int, array{iccid:string, notes?:string|null, line?:int}> $items
+     * @return array{success:bool, message:string, error?:string, errors?:array<int, string>, inserted:int, failed:int}
+     */
+    public function addBulkSims(int $providerId, array $items): array
+    {
+        $items = array_values($items);
+        if ($items === []) {
+            return [
+                'success' => false,
+                'message' => 'Nessuna SIM da elaborare.',
+                'error' => 'Lista vuota',
+                'inserted' => 0,
+                'failed' => 0,
+            ];
+        }
+
+        $stmt = $this->pdo->prepare(
+            "INSERT INTO iccid_stock (iccid, provider_id, status, notes) VALUES (:iccid, :provider, 'InStock', :notes)"
+        );
+
+        $inserted = 0;
+        $failed = 0;
+        $errors = [];
+
+        $this->pdo->beginTransaction();
+        try {
+            foreach ($items as $item) {
+                $iccid = trim((string) ($item['iccid'] ?? ''));
+                $notes = array_key_exists('notes', $item) ? $item['notes'] : null;
+                if ($notes !== null) {
+                    $notes = trim((string) $notes);
+                    if ($notes === '') {
+                        $notes = null;
+                    }
+                }
+                $line = isset($item['line']) ? (int) $item['line'] : null;
+
+                if ($iccid === '' || !Validator::isValidICCID($iccid)) {
+                    $errors[] = $this->formatBulkError($line, $iccid, 'ICCID non valido.');
+                    $failed++;
+                    continue;
+                }
+
+                try {
+                    $stmt->execute([
+                        ':iccid' => $iccid,
+                        ':provider' => $providerId,
+                        ':notes' => $notes,
+                    ]);
+                    $inserted++;
+                } catch (PDOException $exception) {
+                    $errors[] = $this->formatBulkError($line, $iccid, $exception->getMessage());
+                    $failed++;
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $exception) {
+            $this->pdo->rollBack();
+            throw $exception;
+        }
+
+        $success = $inserted > 0;
+        $messageParts = [];
+        if ($inserted > 0) {
+            $messageParts[] = sprintf('%d SIM inserite correttamente.', $inserted);
+        }
+        if ($failed > 0) {
+            $messageParts[] = sprintf('%d voci non sono state inserite.', $failed);
+        }
+        if ($messageParts === []) {
+            $messageParts[] = 'Nessuna SIM elaborata.';
+        }
+
+        $response = [
+            'success' => $success,
+            'message' => implode(' ', $messageParts),
+            'inserted' => $inserted,
+            'failed' => $failed,
+        ];
+
+        if ($failed > 0) {
+            $response['errors'] = $errors;
+            if (!$success) {
+                $response['error'] = 'Nessuna SIM è stata inserita. Verifica i dettagli degli errori.';
+            }
+        }
+
+        return $response;
+    }
+
+    private function formatBulkError(?int $line, string $iccid, string $message): string
+    {
+        $parts = [];
+        if ($line !== null && $line > 0) {
+            $parts[] = 'Riga ' . $line;
+        }
+        if ($iccid !== '') {
+            $parts[] = $iccid;
+        }
+        $prefix = $parts === [] ? 'Voce' : implode(' - ', $parts);
+        return $prefix . ': ' . $message;
+    }
 }

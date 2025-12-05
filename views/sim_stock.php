@@ -75,6 +75,36 @@ $buildStockPageUrl = static function (int $pageNo): string {
     </section>
 
     <section class="page__section">
+        <h3>Aggiungi SIM in blocco</h3>
+        <p class="muted">Incolla un elenco di ICCID (uno per riga) e assegna l'operatore. Facoltativamente puoi aggiungere una nota per singola SIM scrivendo <code>ICCID;Nota</code>.</p>
+
+        <form method="post" class="form" autocomplete="off" data-live-form>
+            <input type="hidden" name="action" value="add_sim_bulk">
+            <input type="hidden" name="page_no" value="<?= (int) $pagination['page'] ?>">
+            <input type="hidden" name="per_page" value="<?= (int) $pagination['per_page'] ?>">
+            <div class="form__grid">
+                <div class="form__group">
+                    <label for="bulk_iccids">Elenco ICCID</label>
+                    <textarea name="bulk_iccids" id="bulk_iccids" rows="6" placeholder="8931...&#10;8931...;Cliente VIP" required></textarea>
+                    <p class="muted">Note per singola SIM separate dal carattere <code>;</code>. Le note sono opzionali.</p>
+                </div>
+                <div class="form__group">
+                    <label for="bulk_provider_id">Operatore</label>
+                    <select name="provider_id" id="bulk_provider_id" required>
+                        <option value="">Seleziona</option>
+                        <?php foreach ($providers as $provider): ?>
+                            <option value="<?= (int) $provider['id'] ?>"><?= htmlspecialchars((string) $provider['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="form__footer">
+                <button type="submit" class="btn btn--secondary">Registra elenco</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="page__section">
         <h3>SIM a magazzino</h3>
         <p class="muted" data-live-slot="status">Ultimo aggiornamento: <span data-live-slot="timestamp">--:--</span></p>
         <div class="table-wrapper">

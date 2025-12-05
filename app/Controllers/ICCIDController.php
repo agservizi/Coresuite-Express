@@ -62,8 +62,58 @@ final class ICCIDController
         }
 
         $iccid = (string) ($input['iccid'] ?? '');
-        $notes = $input['notes'] !== null ? (string) $input['notes'] : null;
+        $notes = array_key_exists('notes', $input) && $input['notes'] !== null ? (string) $input['notes'] : null;
 
         return $this->iccidService->addSim($iccid, $providerId, $notes);
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array{success:bool, message:string, error?:string, errors?:array<int, string>, inserted?:int, failed?:int}
+     */
+    public function createBulk(array $input): array
+    {
+        $providerId = (int) ($input['provider_id'] ?? 0);
+        if ($providerId <= 0) {
+            return [
+                'success' => false,
+                'message' => 'Seleziona un operatore valido.',
+                'error' => 'Provider non valido',
+            ];
+        }
+
+        $rawList = isset($input['bulk_iccids']) ? (string) $input['bulk_iccids'] : '';
+        $lines = preg_split('/\r\n|\r|\n/', $rawList) ?: [];
+
+        $items = [];
+        foreach ($lines as $index => $line) {
+            $cleanLine = trim($line);
+            if ($cleanLine === '') {
+                continue;
+            }
+
+            $parts = array_map('trim', explode(';', $cleanLine, 2));
+            $iccid = $parts[0];
+            $note = $parts[1] ?? null;
+            if ($note !== null && $note === '') {
+                $note = null;
+            }
+
+            $items[] = [
+                'iccid' => $iccid,
+                'notes' => $note,
+                'line' => $index + 1,
+            ];
+        }
+
+        if ($items === []) {
+            return [
+                'success' => false,
+                'message' => 'Inserisci almeno una SIM prima di procedere.',
+                'error' => 'Lista SIM vuota',
+            ];
+        }
+
+        return $this->iccidService->addBulkSims($providerId, $items);
     }
 }

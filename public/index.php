@@ -649,7 +649,12 @@ switch ($page) {
         }
 
         if ($method === 'POST') {
-            $result = $iccidController->create($_POST);
+            $action = isset($_POST['action']) ? (string) $_POST['action'] : 'add_sim';
+            if ($action === 'add_sim_bulk') {
+                $result = $iccidController->createBulk($_POST);
+            } else {
+                $result = $iccidController->create($_POST);
+            }
 
             if (isAjaxRequest()) {
                 $status = $result['success'] ? 200 : 422;
