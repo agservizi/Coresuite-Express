@@ -7,6 +7,7 @@ declare(strict_types=1);
  * @var array{success:bool, message:string, error?:string}|null $feedback
  * @var array{page:int, per_page:int, total:int, pages:int}|null $pagination
  */
+$feedback = $feedback ?? null;
 $pageTitle = 'Magazzino SIM';
 $pagination = $pagination ?? ['page' => 1, 'per_page' => 7, 'total' => count($stock), 'pages' => 1];
 $buildStockPageUrl = static function (int $pageNo): string {
