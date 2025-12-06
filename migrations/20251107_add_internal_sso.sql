@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS sso_auth_codes (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (client_id) REFERENCES sso_clients(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_sso_auth_codes_code (code_hash)
+    INDEX idx_sso_auth_codes_code (code_hash),
+    INDEX idx_sso_auth_codes_client_user (client_id, user_id),
+    INDEX idx_sso_auth_codes_expiration (expires_at, used_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS sso_tokens (
@@ -40,5 +42,7 @@ CREATE TABLE IF NOT EXISTS sso_tokens (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (client_id) REFERENCES sso_clients(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_sso_tokens_hash (access_token_hash)
+    UNIQUE KEY uq_sso_tokens_hash (access_token_hash),
+    INDEX idx_sso_tokens_client_user (client_id, user_id),
+    INDEX idx_sso_tokens_expiration (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

@@ -15,17 +15,30 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
+use App\Services\NotificationDispatcher;
 use App\Services\StockMonitorService;
+use App\Services\SystemNotificationService;
 
 $pdo = Database::getConnection();
 $config = $GLOBALS['config'] ?? [];
 $alertsConfig = $config['alerts'] ?? [];
+$notificationsConfig = $config['notifications'] ?? [];
 $alertEmail = $alertsConfig['email'] ?? null;
 $resendApiKey = $alertsConfig['resend_api_key'] ?? null;
 $resendFrom = $alertsConfig['resend_from'] ?? null;
 $logPath = __DIR__ . '/../storage/logs/stock_alerts.log';
+$notificationsLog = __DIR__ . '/../storage/logs/notifications.log';
 
-$monitor = new StockMonitorService($pdo, $alertEmail, $logPath, $resendApiKey, $resendFrom);
+$notificationDispatcher = new NotificationDispatcher(
+    $notificationsConfig['webhook_url'] ?? null,
+    is_array($notificationsConfig['webhook_headers'] ?? null) ? $notificationsConfig['webhook_headers'] : [],
+    is_array($notificationsConfig['queue'] ?? null) ? $notificationsConfig['queue'] : null,
+    $notificationsLog
+);
+
+$systemNotificationService = new SystemNotificationService($pdo, $notificationDispatcher, $notificationsLog);
+
+$monitor = new StockMonitorService($pdo, $alertEmail, $logPath, $resendApiKey, $resendFrom, $systemNotificationService);
 $result = $monitor->checkThresholds();
 
 $providerStats = $result['providers'] ?? ['checked' => 0, 'created' => 0, 'updated' => 0, 'resolved' => 0];

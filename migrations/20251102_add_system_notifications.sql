@@ -16,9 +16,9 @@ CREATE TABLE IF NOT EXISTS system_notifications (
   read_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_notifications_channel (channel),
+  INDEX idx_notifications_channel (channel, created_at),
   INDEX idx_notifications_created (created_at),
   INDEX idx_notifications_unread (is_read, created_at),
-  INDEX idx_notifications_recipient (recipient_user_id, is_read),
+  INDEX idx_notifications_recipient (recipient_user_id, is_read, created_at),
   CONSTRAINT fk_notifications_user FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
