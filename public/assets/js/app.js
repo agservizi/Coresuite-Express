@@ -1,3 +1,38 @@
+const resolveCsrfToken = () => {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta && typeof meta.getAttribute === 'function') {
+    const value = meta.getAttribute('content');
+    if (value) {
+      return value;
+    }
+  }
+  const field = document.querySelector('input[name="_token"]');
+  if (field instanceof HTMLInputElement && typeof field.value === 'string' && field.value) {
+    return field.value;
+  }
+  return '';
+};
+
+const csrfToken = resolveCsrfToken();
+window.AppCsrfToken = csrfToken;
+
+function withCsrfHeaders(baseHeaders = {}) {
+  const headers = { ...baseHeaders };
+  if (window.AppCsrfToken) {
+    headers['X-CSRF-Token'] = window.AppCsrfToken;
+  }
+  return headers;
+}
+
+function appendCsrfParam(params) {
+  if (window.AppCsrfToken && params instanceof URLSearchParams) {
+    params.set('_token', window.AppCsrfToken);
+  }
+}
+
 const ToastThemes = {
   info: { name: 'info', className: 'toast--info', icon: 'I', ariaLive: 'polite' },
   success: { name: 'success', className: 'toast--success', icon: 'OK', ariaLive: 'polite' },
@@ -645,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch(markForm.action, {
           method: 'POST',
           body: formData,
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          headers: withCsrfHeaders({ 'X-Requested-With': 'XMLHttpRequest' }),
         })
           .then(response => {
             if (!response.ok) {
@@ -1482,13 +1517,14 @@ document.addEventListener('DOMContentLoaded', () => {
       hidePanel();
 
       const params = new URLSearchParams({ action: 'load_sale_details', sale_id: String(saleId) });
+      appendCsrfParam(params);
 
       fetch('index.php?page=sales_create', {
         method: 'POST',
-        headers: {
+        headers: withCsrfHeaders({
           'X-Requested-With': 'XMLHttpRequest',
           'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        }),
         credentials: 'same-origin',
         body: params.toString(),
       })
@@ -1747,9 +1783,9 @@ document.addEventListener('DOMContentLoaded', () => {
       container.dataset.refreshPending = 'true';
 
       fetch(url, {
-        headers: {
+        headers: withCsrfHeaders({
           'X-Requested-With': 'XMLHttpRequest',
-        },
+        }),
         credentials: 'same-origin',
         signal: abortController.signal,
       })
@@ -2117,9 +2153,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let requestUrl = form.getAttribute('action') || window.location.href;
         const requestInit = {
           method,
-          headers: {
+          headers: withCsrfHeaders({
             'X-Requested-With': 'XMLHttpRequest',
-          },
+          }),
           credentials: 'same-origin',
         };
 

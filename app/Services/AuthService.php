@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Helpers\RateLimiter;
 use PDO;
 use PDOException;
 use Throwable;
@@ -14,6 +15,8 @@ final class AuthService
     private const SESSION_PENDING_MFA = 'auth_pending_mfa';
     private const SESSION_MFA_SETUP = 'auth_mfa_setup';
     private const PENDING_MFA_TTL = 600; // seconds
+    private const LOGIN_ATTEMPT_LIMIT = 5;
+    private const LOGIN_LOCK_SECONDS = 900; // 15 minutes
 
     private bool $rememberTableChecked = false;
 
@@ -43,8 +46,14 @@ final class AuthService
     /**
      * @return array{success:bool, mfa_required?:bool, username?:string, error?:string}
      */
-    public function login(string $username, string $password, bool $remember = false): array
+    public function login(string $username, string $password, bool $remember = false, ?string $clientIp = null): array
     {
+        $throttleKeys = $this->loginThrottleKeys($username, $clientIp);
+        $throttleBlock = $this->checkLoginThrottle($throttleKeys);
+        if ($throttleBlock !== null) {
+            return $throttleBlock;
+        }
+
         $stmt = $this->pdo->prepare(
             'SELECT id, username, password_hash, role_id, fullname, mfa_enabled, mfa_secret FROM users WHERE username = :u LIMIT 1'
         );
@@ -52,11 +61,15 @@ final class AuthService
         $user = $stmt->fetch();
 
         if (!$user || !password_verify($password, (string) $user['password_hash'])) {
+            $this->recordFailedLogin($throttleKeys);
+
             return [
                 'success' => false,
                 'error' => 'Credenziali non valide.',
             ];
         }
+
+        $this->clearLoginAttempts($throttleKeys);
 
         session_regenerate_id(true);
         $sessionUser = [
@@ -665,7 +678,6 @@ final class AuthService
                     ':id' => $userId,
                     ':hash' => $hash,
                 ]);
-
                 $codes[] = $code;
             }
 
@@ -873,5 +885,62 @@ final class AuthService
         );
 
         $this->rememberTableChecked = true;
+    }
+
+    /**
+     * @return array{success:bool, error:string, retry_after?:int}|null
+     */
+    private function checkLoginThrottle(array $keys): ?array
+    {
+        foreach ($keys as $key) {
+            if (RateLimiter::tooManyAttempts($key, self::LOGIN_ATTEMPT_LIMIT, self::LOGIN_LOCK_SECONDS)) {
+                $retryAfter = RateLimiter::availableIn($key);
+                return [
+                    'success' => false,
+                    'error' => $this->formatThrottleMessage($retryAfter),
+                    'retry_after' => $retryAfter,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function loginThrottleKeys(string $username, ?string $clientIp): array
+    {
+        $keys = [];
+        if ($clientIp !== null && $clientIp !== '') {
+            $keys[] = 'login:ip:' . sha1($clientIp);
+        }
+        if ($username !== '') {
+            $keys[] = 'login:user:' . sha1($username);
+        }
+
+        return $keys;
+    }
+
+    private function recordFailedLogin(array $keys): void
+    {
+        foreach ($keys as $key) {
+            RateLimiter::hit($key, self::LOGIN_LOCK_SECONDS);
+        }
+    }
+
+    private function clearLoginAttempts(array $keys): void
+    {
+        foreach ($keys as $key) {
+            RateLimiter::clear($key);
+        }
+    }
+
+    private function formatThrottleMessage(int $seconds): string
+    {
+        $seconds = max(1, $seconds);
+        if ($seconds < 60) {
+            return 'Troppi tentativi. Riprova tra ' . $seconds . ' secondi.';
+        }
+
+        $minutes = (int) ceil($seconds / 60);
+        return 'Troppi tentativi. Riprova tra ' . $minutes . ' minut' . ($minutes === 1 ? 'o' : 'i') . '.';
     }
 }

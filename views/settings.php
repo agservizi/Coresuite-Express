@@ -17,6 +17,9 @@ declare(strict_types=1);
  * @var array<string, mixed>|null $operatorEdit
  * @var array<string, mixed>|null $operatorEditForm
  * @var bool|null $operatorsOpen
+ * @var array<string, mixed>|null $campaignEdit
+ * @var array<string, mixed>|null $campaignEditForm
+ * @var bool|null $campaignsOpen
  * @var bool $fiscalOpen
  * @var bool $ssoEnabled
  * @var array<int, array<string, mixed>> $ssoClients
@@ -33,6 +36,8 @@ $fiscalProducts = $fiscalProducts ?? [];
 $isAdmin = $isAdmin ?? false;
 $operatorEdit = $operatorEdit ?? null;
 $operatorEditForm = isset($operatorEditForm) && is_array($operatorEditForm) ? $operatorEditForm : null;
+$campaignEdit = $campaignEdit ?? null;
+$campaignEditForm = isset($campaignEditForm) && is_array($campaignEditForm) ? $campaignEditForm : null;
 $auditLogs = $auditLogs ?? [];
 $auditPagination = $auditPagination ?? [
     'page' => 1,
@@ -52,6 +57,7 @@ $operatorsOpen = is_bool($operatorsOpenProp)
     ? $operatorsOpenProp
     : ($isAdmin && $feedback !== null && ($feedback['success'] ?? false) === false && ! $inventoryOpen);
 $fiscalOpen = isset($fiscalOpen) ? (bool) $fiscalOpen : false;
+$campaignsOpenProp = isset($campaignsOpen) ? $campaignsOpen : null;
 $ssoEnabled = isset($ssoEnabled) ? (bool) $ssoEnabled : false;
 $ssoClients = isset($ssoClients) && is_array($ssoClients) ? $ssoClients : [];
 $ssoFeedback = isset($ssoFeedback) && is_array($ssoFeedback) ? $ssoFeedback : null;
@@ -78,7 +84,9 @@ if (!$fiscalOpen && $feedback !== null) {
         }
     }
 }
-$campaignsOpen = $feedback !== null && isset($feedback['message']) && strpos((string) $feedback['message'], 'Campagna') !== false;
+$campaignsOpen = is_bool($campaignsOpenProp)
+    ? $campaignsOpenProp
+    : ($feedback !== null && isset($feedback['message']) && strpos((string) $feedback['message'], 'Campagna') !== false);
 $ssoOpen = $ssoOpen || $ssoFeedback !== null;
 $auditCurrentPage = max(1, (int) ($auditPagination['page'] ?? 1));
 $totalAuditPages = max(1, (int) ($auditPagination['pages'] ?? 1));
@@ -353,6 +361,8 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                                 <th>Tipo</th>
                                                 <th>Valore</th>
                                                 <th>Validità</th>
+                                                <th>Performance</th>
+                                                <th>Ultimo utilizzo</th>
                                                 <th>Stato</th>
                                                 <th>Azioni</th>
                                             </tr>
@@ -365,6 +375,16 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                                     $value = (float) ($campaign['value'] ?? 0);
                                                     $starts = !empty($campaign['starts_at']) ? date('d/m/Y', strtotime((string) $campaign['starts_at'])) : null;
                                                     $ends = !empty($campaign['ends_at']) ? date('d/m/Y', strtotime((string) $campaign['ends_at'])) : null;
+                                                    $usageCount = (int) ($campaign['usage_count'] ?? 0);
+                                                    $totalDiscountGiven = (float) ($campaign['total_discount'] ?? 0.0);
+                                                    $lastUsedAtRaw = $campaign['last_used_at'] ?? null;
+                                                    $lastUsedAt = null;
+                                                    if (!empty($lastUsedAtRaw)) {
+                                                        $lastUsedTimestamp = strtotime((string) $lastUsedAtRaw);
+                                                        if ($lastUsedTimestamp !== false) {
+                                                            $lastUsedAt = date('d/m/Y H:i', $lastUsedTimestamp);
+                                                        }
+                                                    }
                                                 ?>
                                                 <tr>
                                                     <td>
@@ -388,16 +408,40 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                                             <?= $starts ?? 'n/d' ?> → <?= $ends ?? 'n/d' ?>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td><?= $isActive ? 'Attiva' : 'Disattivata' ?></td>
                                                     <td>
-                                                        <form method="post" class="inline-form">
-                                                            <input type="hidden" name="action" value="toggle_discount_campaign">
-                                                            <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
-                                                            <input type="hidden" name="target_status" value="<?= $isActive ? '0' : '1' ?>">
-                                                            <button type="submit" class="btn btn--secondary btn--small">
-                                                                <?= $isActive ? 'Disattiva' : 'Attiva' ?>
-                                                            </button>
-                                                        </form>
+                                                        <?php if ($usageCount === 0): ?>
+                                                            <span class="badge badge--muted">0 utilizzi</span>
+                                                        <?php else: ?>
+                                                            <strong><?= $usageCount ?></strong> utilizzi
+                                                            <div class="muted">€ <?= number_format($totalDiscountGiven, 2, ',', '.') ?> erogati</div>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td>
+                                                        <?php if ($lastUsedAt === null): ?>
+                                                            <span class="muted">Mai</span>
+                                                        <?php else: ?>
+                                                            <?= htmlspecialchars($lastUsedAt) ?>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge <?= $isActive ? 'badge--success' : 'badge--muted' ?>">
+                                                            <?= $isActive ? 'Attiva' : 'Disattivata' ?>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div class="table-actions">
+                                                            <a class="btn btn--secondary btn--small" href="index.php?page=settings&amp;campaigns_open=1&amp;edit_campaign=<?= (int) $campaign['id'] ?>">
+                                                                Modifica
+                                                            </a>
+                                                            <form method="post" class="inline-form">
+                                                                <input type="hidden" name="action" value="toggle_discount_campaign">
+                                                                <input type="hidden" name="campaign_id" value="<?= (int) $campaign['id'] ?>">
+                                                                <input type="hidden" name="target_status" value="<?= $isActive ? '0' : '1' ?>">
+                                                                <button type="submit" class="btn btn--secondary btn--small">
+                                                                    <?= $isActive ? 'Disattiva' : 'Attiva' ?>
+                                                                </button>
+                                                            </form>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
@@ -406,6 +450,91 @@ $hasAuditNext = (bool) ($auditPagination['has_next'] ?? ($auditCurrentPage < $to
                                 </div>
                             <?php endif; ?>
                         </section>
+
+                        <?php if ($campaignEdit !== null): ?>
+                            <?php
+                                $editCampaignId = (int) ($campaignEdit['id'] ?? 0);
+                                $editNameValue = isset($campaignEditForm['campaign_name']) && $campaignEditForm['campaign_name'] !== ''
+                                    ? (string) $campaignEditForm['campaign_name']
+                                    : (string) ($campaignEdit['name'] ?? '');
+                                $editTypeValueRaw = isset($campaignEditForm['campaign_type']) && $campaignEditForm['campaign_type'] !== ''
+                                    ? strtolower((string) $campaignEditForm['campaign_type'])
+                                    : strtolower((string) ($campaignEdit['type'] ?? 'fixed'));
+                                $editTypeValue = in_array($editTypeValueRaw, ['fixed', 'percent'], true) ? $editTypeValueRaw : 'fixed';
+                                $editValueValue = isset($campaignEditForm['campaign_value']) && $campaignEditForm['campaign_value'] !== ''
+                                    ? (string) $campaignEditForm['campaign_value']
+                                    : number_format((float) ($campaignEdit['value'] ?? 0), 2, '.', '');
+                                $editDescriptionValue = isset($campaignEditForm['campaign_description'])
+                                    ? (string) $campaignEditForm['campaign_description']
+                                    : (string) ($campaignEdit['description'] ?? '');
+                                $editStartsValue = isset($campaignEditForm['campaign_starts_at']) && $campaignEditForm['campaign_starts_at'] !== ''
+                                    ? (string) $campaignEditForm['campaign_starts_at']
+                                    : (!empty($campaignEdit['starts_at']) ? date('Y-m-d', strtotime((string) $campaignEdit['starts_at'])) : '');
+                                $editEndsValue = isset($campaignEditForm['campaign_ends_at']) && $campaignEditForm['campaign_ends_at'] !== ''
+                                    ? (string) $campaignEditForm['campaign_ends_at']
+                                    : (!empty($campaignEdit['ends_at']) ? date('Y-m-d', strtotime((string) $campaignEdit['ends_at'])) : '');
+                                $editUsageCount = (int) ($campaignEdit['usage_count'] ?? 0);
+                                $editDiscountTotal = (float) ($campaignEdit['total_discount'] ?? 0.0);
+                                $editLastUsedRaw = $campaignEdit['last_used_at'] ?? null;
+                                $editLastUsed = null;
+                                if (!empty($editLastUsedRaw)) {
+                                    $editLastTimestamp = strtotime((string) $editLastUsedRaw);
+                                    if ($editLastTimestamp !== false) {
+                                        $editLastUsed = date('d/m/Y H:i', $editLastTimestamp);
+                                    }
+                                }
+                            ?>
+                            <section class="settings-operators__panel">
+                                <h4>Modifica campagna</h4>
+                                <p class="muted">
+                                    Aggiorna i parametri di <strong><?= htmlspecialchars($editNameValue !== '' ? $editNameValue : 'campagna #' . $editCampaignId) ?></strong>.
+                                    <?php if ($editUsageCount > 0): ?>
+                                        Utilizzata <?= $editUsageCount ?> volte per € <?= number_format($editDiscountTotal, 2, ',', '.') ?> di sconto<?= $editLastUsed !== null ? ', ultimo utilizzo ' . htmlspecialchars($editLastUsed) : '' ?>.
+                                    <?php else: ?>
+                                        Non è stata ancora usata nelle vendite registrate.
+                                    <?php endif; ?>
+                                </p>
+                                <form method="post" class="form settings-form">
+                                    <input type="hidden" name="action" value="update_discount_campaign">
+                                    <input type="hidden" name="campaign_id" value="<?= $editCampaignId ?>">
+                                    <div class="settings-form__grid">
+                                        <div class="settings-form__field">
+                                            <label for="campaign_edit_name">Nome</label>
+                                            <input type="text" id="campaign_edit_name" name="campaign_name" value="<?= htmlspecialchars($editNameValue) ?>" required>
+                                        </div>
+                                        <div class="settings-form__field">
+                                            <label for="campaign_edit_type">Tipo sconto</label>
+                                            <select id="campaign_edit_type" name="campaign_type" required>
+                                                <option value="fixed" <?= $editTypeValue === 'fixed' ? 'selected' : '' ?>>Importo fisso</option>
+                                                <option value="percent" <?= $editTypeValue === 'percent' ? 'selected' : '' ?>>Percentuale</option>
+                                            </select>
+                                        </div>
+                                        <div class="settings-form__field">
+                                            <label for="campaign_edit_value">Valore</label>
+                                            <input type="number" id="campaign_edit_value" name="campaign_value" min="0" step="0.01" value="<?= htmlspecialchars($editValueValue) ?>" required>
+                                        </div>
+                                        <div class="settings-form__field">
+                                            <label for="campaign_edit_starts">Valido dal</label>
+                                            <input type="date" id="campaign_edit_starts" name="campaign_starts_at" value="<?= htmlspecialchars($editStartsValue) ?>">
+                                        </div>
+                                        <div class="settings-form__field">
+                                            <label for="campaign_edit_ends">Valido fino al</label>
+                                            <input type="date" id="campaign_edit_ends" name="campaign_ends_at" value="<?= htmlspecialchars($editEndsValue) ?>">
+                                        </div>
+                                        <div class="settings-form__field">
+                                            <label for="campaign_edit_description">Descrizione (opzionale)</label>
+                                            <div class="table-field">
+                                                <textarea id="campaign_edit_description" name="campaign_description" rows="2" class="table-field__input" placeholder="Note per gli operatori..."><?= htmlspecialchars($editDescriptionValue) ?></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="table-actions-inline">
+                                        <button type="submit" class="btn btn--primary">Salva modifiche</button>
+                                        <a class="btn btn--secondary" href="index.php?page=settings&amp;campaigns_open=1">Annulla</a>
+                                    </div>
+                                </form>
+                            </section>
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
             </div>

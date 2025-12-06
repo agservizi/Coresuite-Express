@@ -7,6 +7,7 @@ $feedbackActivation = $feedbackActivation ?? null;
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="<?= htmlspecialchars(\App\Helpers\Csrf::token(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
     <title>Attiva il tuo accesso</title>
     <link rel="stylesheet" href="../assets/css/portal.css?v=1">
 </head>

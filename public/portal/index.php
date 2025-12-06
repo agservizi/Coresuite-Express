@@ -19,6 +19,8 @@ spl_autoload_register(static function (string $class): void {
 
 use App\Controllers\CustomerPortalController;
 use App\Controllers\PrivacyPolicyController;
+use App\Helpers\Csrf;
+use App\Helpers\InputFilter;
 use App\Services\CustomerPortalAuthService;
 use App\Services\CustomerPortalService;
 use App\Services\NotificationDispatcher;
@@ -46,7 +48,10 @@ $portalController = new CustomerPortalController($authService, $portalService);
 $privacyPolicyController = new PrivacyPolicyController($privacyPolicyService);
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$view = $_GET['view'] ?? 'dashboard';
+$view = InputFilter::string($_GET['view'] ?? 'dashboard', 32);
+if ($view === '') {
+    $view = 'dashboard';
+}
 $feedback = [
     'login' => null,
     'activation' => null,
@@ -56,17 +61,29 @@ $feedback = [
     'product' => null,
     'policy' => null,
 ];
-$prefillEmail = isset($_GET['prefill_email']) ? trim((string) $_GET['prefill_email']) : '';
-if ($prefillEmail !== '') {
-    $prefillEmail = function_exists('mb_substr') ? mb_substr($prefillEmail, 0, 120) : substr($prefillEmail, 0, 120);
-}
-$prefillPassword = isset($_GET['prefill_password']) ? (string) $_GET['prefill_password'] : '';
-if ($prefillPassword !== '') {
-    $prefillPassword = function_exists('mb_substr') ? mb_substr($prefillPassword, 0, 120) : substr($prefillPassword, 0, 120);
+$prefillEmail = InputFilter::email($_GET['prefill_email'] ?? '') ?? '';
+$prefillPassword = InputFilter::string($_GET['prefill_password'] ?? '', 120, false, false);
+
+$portalAjaxRequest = isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+    && strtolower((string) $_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) && !Csrf::validateRequest($_POST, $_SERVER)) {
+    if ($portalAjaxRequest) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(419);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Token CSRF non valido o scaduto.',
+        ]);
+    } else {
+        http_response_code(419);
+        echo 'Token CSRF non valido o scaduto. Ricarica la pagina e riprova.';
+    }
+    exit;
 }
 
 if ($method === 'POST') {
-    $action = $_POST['action'] ?? '';
+    $action = InputFilter::string($_POST['action'] ?? '', 40);
     if ($action === 'login') {
         $result = $portalController->login($_POST);
         if ($result['success']) {
@@ -150,7 +167,7 @@ if ($view === 'privacy' && $activePolicy === null) {
 
 switch ($view) {
     case 'activate':
-        $token = isset($_GET['token']) ? (string) $_GET['token'] : '';
+        $token = InputFilter::string($_GET['token'] ?? '', 128);
         portal_render('portal/activate', [
             'token' => $token,
             'feedbackActivation' => $feedback['activation'],
@@ -197,18 +214,18 @@ switch ($view) {
 
         switch ($view) {
             case 'sales':
-                $page = isset($_GET['page']) ? max((int) $_GET['page'], 1) : 1;
-                $perPage = isset($_GET['per_page']) ? max(1, min((int) $_GET['per_page'], 20)) : 10;
-                $status = isset($_GET['status']) ? (string) $_GET['status'] : null;
-                $payment = isset($_GET['payment_status']) ? (string) $_GET['payment_status'] : null;
+                $page = InputFilter::int($_GET['page'] ?? 1, 1, PHP_INT_MAX, 1);
+                $perPage = InputFilter::int($_GET['per_page'] ?? 10, 1, 20, 10);
+                $status = InputFilter::string($_GET['status'] ?? '', 30) ?: null;
+                $payment = InputFilter::string($_GET['payment_status'] ?? '', 30) ?: null;
                 $sales = $portalService->listSales($account['customer_id'], $page, $perPage, $status, $payment);
-                $catalogPage = isset($_GET['catalog_page']) ? max((int) $_GET['catalog_page'], 1) : 1;
-                $catalogPerPage = isset($_GET['catalog_per_page']) ? max(1, min((int) $_GET['catalog_per_page'], 24)) : 8;
-                $catalogCategory = isset($_GET['catalog_category']) ? trim((string) $_GET['catalog_category']) : null;
-                $catalogSearch = isset($_GET['catalog_search']) ? trim((string) $_GET['catalog_search']) : null;
-                $selectedProduct = isset($_GET['selected_product']) ? (int) $_GET['selected_product'] : null;
+                $catalogPage = InputFilter::int($_GET['catalog_page'] ?? 1, 1, PHP_INT_MAX, 1);
+                $catalogPerPage = InputFilter::int($_GET['catalog_per_page'] ?? 8, 1, 24, 8);
+                $catalogCategory = InputFilter::string($_GET['catalog_category'] ?? '', 60) ?: null;
+                $catalogSearch = InputFilter::string($_GET['catalog_search'] ?? '', 120) ?: null;
+                $selectedProduct = InputFilter::int($_GET['selected_product'] ?? null, 1, PHP_INT_MAX, 0) ?: null;
                 if (($selectedProduct === null || $selectedProduct <= 0) && $feedback['product'] !== null && !($feedback['product']['success'] ?? false)) {
-                    $postedProduct = isset($_POST['product_id']) ? (int) $_POST['product_id'] : 0;
+                    $postedProduct = InputFilter::int($_POST['product_id'] ?? 0, 1, PHP_INT_MAX, 0);
                     if ($postedProduct > 0) {
                         $selectedProduct = $postedProduct;
                     }
@@ -235,8 +252,8 @@ switch ($view) {
                 break;
 
             case 'orders':
-                $statusFilter = isset($_GET['status']) ? (string) $_GET['status'] : null;
-                $typeFilter = isset($_GET['type']) ? (string) $_GET['type'] : null;
+                $statusFilter = InputFilter::string($_GET['status'] ?? '', 30) ?: null;
+                $typeFilter = InputFilter::string($_GET['type'] ?? '', 30) ?: null;
                 $requests = $portalService->listProductRequests($account['customer_id'], $account['id']);
 
                 $totalValue = 0.0;
@@ -293,7 +310,7 @@ switch ($view) {
                 break;
 
             case 'sale_detail':
-                $saleId = isset($_GET['sale_id']) ? (int) $_GET['sale_id'] : 0;
+                $saleId = InputFilter::int($_GET['sale_id'] ?? 0, 1, PHP_INT_MAX, 0);
                 $sale = $saleId > 0 ? $portalService->getSaleDetail($account['customer_id'], $saleId) : null;
                 if ($sale === null) {
                     http_response_code(404);
@@ -312,10 +329,10 @@ switch ($view) {
                 break;
 
             case 'payments':
-                $page = isset($_GET['page']) ? max((int) $_GET['page'], 1) : 1;
-                $perPage = isset($_GET['per_page']) ? max(1, min((int) $_GET['per_page'], 20)) : 10;
-                $saleStatus = isset($_GET['status']) ? (string) $_GET['status'] : null;
-                $paymentStatus = isset($_GET['payment_status']) ? (string) $_GET['payment_status'] : null;
+                $page = InputFilter::int($_GET['page'] ?? 1, 1, PHP_INT_MAX, 1);
+                $perPage = InputFilter::int($_GET['per_page'] ?? 10, 1, 20, 10);
+                $saleStatus = InputFilter::string($_GET['status'] ?? '', 30) ?: null;
+                $paymentStatus = InputFilter::string($_GET['payment_status'] ?? '', 30) ?: null;
                 $sales = $portalService->listSales($account['customer_id'], $page, $perPage, $saleStatus, $paymentStatus);
                 $layoutData['view'] = 'payments';
                 $layoutData['data'] = [
@@ -331,7 +348,7 @@ switch ($view) {
                 break;
 
             case 'support_detail':
-                $requestId = isset($_GET['request_id']) ? (int) $_GET['request_id'] : 0;
+                $requestId = InputFilter::int($_GET['request_id'] ?? 0, 1, PHP_INT_MAX, 0);
                 $request = $requestId > 0 ? $portalService->getSupportRequest($account['customer_id'], $account['id'], $requestId) : null;
                 if ($request === null) {
                     http_response_code(404);
@@ -349,9 +366,9 @@ switch ($view) {
                 break;
 
             case 'support':
-                $page = isset($_GET['page']) ? max((int) $_GET['page'], 1) : 1;
-                $perPage = isset($_GET['per_page']) ? max(1, min((int) $_GET['per_page'], 20)) : 10;
-                $status = isset($_GET['status']) ? (string) $_GET['status'] : null;
+                $page = InputFilter::int($_GET['page'] ?? 1, 1, PHP_INT_MAX, 1);
+                $perPage = InputFilter::int($_GET['per_page'] ?? 10, 1, 20, 10);
+                $status = InputFilter::string($_GET['status'] ?? '', 30) ?: null;
                 $requests = $portalService->listSupportRequests($account['customer_id'], $account['id'], $page, $perPage, $status);
                 $layoutData['view'] = 'support';
                 $layoutData['data'] = [
@@ -399,10 +416,17 @@ function portal_render(string $template, array $params = [], bool $useLayout = t
     if ($useLayout) {
         ob_start();
         require $viewPath;
-        $content = ob_get_clean();
+        $content = Csrf::injectIntoForms(ob_get_clean() ?: '');
+
+        ob_start();
         require __DIR__ . '/../../views/portal/master.php';
+        $layoutOutput = ob_get_clean();
+        echo Csrf::injectIntoForms($layoutOutput ?: '');
     } else {
+        ob_start();
         require $viewPath;
+        $viewOutput = ob_get_clean();
+        echo Csrf::injectIntoForms($viewOutput ?: '');
     }
 }
 

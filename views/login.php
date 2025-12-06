@@ -12,6 +12,7 @@ $rememberChecked = !empty($oldInput['remember_me']);
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="<?= htmlspecialchars(\App\Helpers\Csrf::token(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
     <title>Accedi - <?= htmlspecialchars($appName) ?></title>
     <link rel="stylesheet" href="assets/css/styles.css">
 </head>

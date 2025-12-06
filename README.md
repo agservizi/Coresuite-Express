@@ -9,24 +9,26 @@ Gestionale web minimale per negozio di telefonia, pensato per essere avviato vel
 
 ## Setup rapido
 1. Clona o copia il progetto nella cartella del web server.
-2. Crea il database e le tabelle:
+2. Copia il file `.env.example` in `.env` e personalizza i valori principali (`DB_HOST`, `DB_NAME`, `DB_USER`, email di alert, webhook, ecc.).
+3. Installa le dipendenze PHP (inclusi i tool di sviluppo):
    ```bash
-   mysql -u root -p < migrations/create_db.sql
+   composer install
    ```
-3. Aggiorna `config/config.php` con le tue credenziali MySQL.
-4. Crea un utente admin via SQL:
-   ```sql
-   INSERT INTO users (username, password_hash, role_id, fullname)
-   VALUES ('admin', '$2y$10$examplehashqui', 1, 'Admin');
+4. Popola database e utente admin con l'installer interattivo:
+   ```bash
+   php scripts/install.php --admin-user=admin --admin-pass="SuperSegreta123" --admin-name="Administrator"
    ```
-   Genera l'hash da terminale PHP: `php -r "echo password_hash('tuaPassword', PASSWORD_DEFAULT);"`
+   Opzioni utili: `--force` ricrea il database, `--skip-admin` evita la creazione dell'utente, `--upgrade` applica solo le migrazioni pendenti.
 5. Avvia il server di sviluppo:
    ```bash
    php -S 127.0.0.1:8000 -t public
    ```
-6. Visita [http://127.0.0.1:8000](http://127.0.0.1:8000) e accedi con l'utente creato.
+6. Visita [http://127.0.0.1:8000](http://127.0.0.1:8000) e accedi con le credenziali definite allo step precedente.
+
+Preferisci una configurazione manuale? Puoi sempre importare `migrations/create_db.sql` via `mysql -u root -p < migrations/create_db.sql`, aggiornare `config/config.php` con le credenziali e creare l'utente admin con un semplice `INSERT INTO users (...);`.
 
 ## Variabili ambiente opzionali
+Tutte le chiavi elencate sono già presenti in `.env.example`: copia il file e personalizza i valori prima di lanciare gli script.
 | Variabile | Descrizione |
 | --- | --- |
 | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_FROM_NAME` | Configurano l'invio email via Resend per credenziali clienti e notifiche vendite. |
@@ -65,7 +67,27 @@ logs/              # spazio per log applicativi
 - Tutte le query usano prepared statement PDO.
 - Password salvate con `password_hash()` / `password_verify()`.
 - I controller sono pensati per essere semplici shim fra viste e servizi.
+- Gli input sensibili vengono filtrati tramite `App\Helpers\InputFilter` prima di raggiungere servizi e database (login, MFA, portale clienti).
 - `iccid_example.csv` offre un template pronto per importare gli ICCID.
+- Login amministrativo e portale clienti protetti da rate limiting (5 tentativi falliti per IP/utente, lockout 15 minuti automatico).
+
+## Test e quality tools
+- Esegui i test PHPUnit:
+   ```bash
+   composer test
+   ```
+- Analisi statica (PHPStan livello 6):
+   ```bash
+   composer lint
+   ```
+- Verifica coding style senza modifiche:
+   ```bash
+   composer cs:check
+   ```
+- Applica automaticamente le regole PSR-12:
+   ```bash
+   composer cs:fix
+   ```
 
 ## Gestione discrepanze checksum migrazioni
 - Se `php scripts/install.php --upgrade` si blocca per un checksum differente, prima verifica quale valore è registrato in `schema_migrations`.

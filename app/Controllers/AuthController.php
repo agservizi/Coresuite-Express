@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Helpers\InputFilter;
 use App\Services\AuthService;
 
 final class AuthController
@@ -17,12 +18,9 @@ final class AuthController
      */
     public function login(array $input): array
     {
-        $username = trim((string) ($input['username'] ?? ''));
-        if ($username !== '') {
-            $username = function_exists('mb_strtolower') ? mb_strtolower($username) : strtolower($username);
-        }
-        $password = (string) ($input['password'] ?? '');
-        $remember = isset($input['remember_me']) && (string) $input['remember_me'] === '1';
+        $username = InputFilter::lowercase($input['username'] ?? '', 190);
+        $password = InputFilter::string($input['password'] ?? '', 255, false, false);
+        $remember = InputFilter::bool($input['remember_me'] ?? null);
 
         if ($username === '' || $password === '') {
             return [
@@ -32,7 +30,8 @@ final class AuthController
             ];
         }
 
-        $result = $this->authService->login($username, $password, $remember);
+        $clientIp = $this->resolveClientIp();
+        $result = $this->authService->login($username, $password, $remember, $clientIp);
         if ($result['success'] ?? false) {
             return ['success' => true];
         }
@@ -147,5 +146,33 @@ final class AuthController
             header('Location: index.php?page=login');
             exit;
         }
+    }
+
+    private function resolveClientIp(): ?string
+    {
+        $candidates = [
+            'HTTP_CF_CONNECTING_IP',
+            'HTTP_X_FORWARDED_FOR',
+            'HTTP_X_REAL_IP',
+            'REMOTE_ADDR',
+        ];
+
+        foreach ($candidates as $key) {
+            if (empty($_SERVER[$key])) {
+                continue;
+            }
+
+            $value = (string) $_SERVER[$key];
+            if ($key === 'HTTP_X_FORWARDED_FOR') {
+                $parts = array_map('trim', explode(',', $value));
+                $value = $parts[0] ?? '';
+            }
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 }

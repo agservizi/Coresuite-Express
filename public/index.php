@@ -166,6 +166,8 @@ use App\Controllers\SalesController;
 use App\Controllers\SupportRequestController;
 use App\Controllers\SsoController;
 use App\Controllers\PdaImportController;
+use App\Helpers\Csrf;
+use App\Helpers\InputFilter;
 use App\Services\AuthService;
 use App\Services\CustomerService;
 use App\Services\DiscountCampaignService;
@@ -262,6 +264,22 @@ $pdaImportController = new PdaImportController($pdaImportService);
 $page = $_GET['page'] ?? 'dashboard';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $currentUser = $authService->currentUser();
+
+$csrfExemptPages = ['sso_token'];
+if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) && !in_array($page, $csrfExemptPages, true)) {
+    if (!Csrf::validateRequest($_POST, $_SERVER)) {
+        if (isAjaxRequest()) {
+            jsonResponse([
+                'success' => false,
+                'error' => 'Token CSRF non valido o scaduto.',
+            ], 419);
+        }
+
+        http_response_code(419);
+        echo 'Token CSRF non valido o scaduto. Ricarica la pagina e riprova.';
+        exit;
+    }
+}
 
 if ($page === 'sso_token') {
     if ($method !== 'POST') {
@@ -1047,6 +1065,11 @@ switch ($page) {
         $operatorsOpenOverride = null;
         $operatorEditId = 0;
 
+        $campaignEdit = null;
+        $campaignEditForm = null;
+        $campaignsOpenOverride = null;
+        $campaignEditId = 0;
+
         if ($isAdmin) {
             if (isset($_SESSION['settings_operator_form']) && is_array($_SESSION['settings_operator_form'])) {
                 $storedOperatorForm = $_SESSION['settings_operator_form'];
@@ -1056,6 +1079,16 @@ switch ($page) {
                     ? $storedOperatorForm['form']
                     : null;
                 $operatorsOpenOverride = true;
+            }
+
+            if (isset($_SESSION['settings_campaign_form']) && is_array($_SESSION['settings_campaign_form'])) {
+                $storedCampaignForm = $_SESSION['settings_campaign_form'];
+                unset($_SESSION['settings_campaign_form']);
+                $campaignEditId = isset($storedCampaignForm['id']) ? (int) $storedCampaignForm['id'] : 0;
+                $campaignEditForm = isset($storedCampaignForm['form']) && is_array($storedCampaignForm['form'])
+                    ? $storedCampaignForm['form']
+                    : null;
+                $campaignsOpenOverride = true;
             }
 
             if (isset($_GET['operators_open'])) {
@@ -1068,8 +1101,23 @@ switch ($page) {
                     $operatorsOpenOverride = true;
                 }
             }
+
+            if (isset($_GET['campaigns_open'])) {
+                $campaignsOpenOverride = true;
+            }
+
+            if (isset($_GET['edit_campaign'])) {
+                $targetCampaign = max((int) $_GET['edit_campaign'], 0);
+                if ($targetCampaign > 0 && $campaignEditId === 0) {
+                    $campaignEditId = $targetCampaign;
+                }
+                if ($targetCampaign > 0) {
+                    $campaignsOpenOverride = true;
+                }
+            }
         } else {
             unset($_SESSION['settings_operator_form']);
+            unset($_SESSION['settings_campaign_form']);
         }
 
         $fiscalOpen = isset($_GET['fiscal_open']);
@@ -1176,6 +1224,7 @@ switch ($page) {
                 }
                 $redirectParams['fiscal_open'] = 1;
             } elseif ($action === 'create_discount_campaign') {
+                $redirectParams['campaigns_open'] = 1;
                 if (!$isAdmin) {
                     $result = [
                         'success' => false,
@@ -1185,7 +1234,39 @@ switch ($page) {
                 } else {
                     $result = $discountCampaignService->create($_POST);
                 }
+            } elseif ($action === 'update_discount_campaign') {
+                $redirectParams['campaigns_open'] = 1;
+                if (!$isAdmin) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Operazione non autorizzata.',
+                        'error' => 'Solo gli amministratori possono aggiornare campagne.',
+                    ];
+                } else {
+                    $campaignId = (int) ($_POST['campaign_id'] ?? 0);
+                    $result = $discountCampaignService->update($campaignId, $_POST);
+                    if (!($result['success'] ?? false)) {
+                        $formData = [
+                            'campaign_name' => trim((string) ($_POST['campaign_name'] ?? '')),
+                            'campaign_type' => trim((string) ($_POST['campaign_type'] ?? '')),
+                            'campaign_value' => trim((string) ($_POST['campaign_value'] ?? '')),
+                            'campaign_description' => trim((string) ($_POST['campaign_description'] ?? '')),
+                            'campaign_starts_at' => trim((string) ($_POST['campaign_starts_at'] ?? '')),
+                            'campaign_ends_at' => trim((string) ($_POST['campaign_ends_at'] ?? '')),
+                        ];
+                        $_SESSION['settings_campaign_form'] = [
+                            'id' => $campaignId,
+                            'form' => $formData,
+                        ];
+                        if ($campaignId > 0) {
+                            $redirectParams['edit_campaign'] = $campaignId;
+                        }
+                    } else {
+                        unset($_SESSION['settings_campaign_form']);
+                    }
+                }
             } elseif ($action === 'toggle_discount_campaign') {
+                $redirectParams['campaigns_open'] = 1;
                 if (!$isAdmin) {
                     $result = [
                         'success' => false,
@@ -1354,6 +1435,29 @@ switch ($page) {
             }
         }
 
+        $discountCampaigns = $discountCampaignService->listAll();
+        if ($isAdmin && $campaignEditId > 0) {
+            foreach ($discountCampaigns as $candidateCampaign) {
+                if ((int) ($candidateCampaign['id'] ?? 0) === $campaignEditId) {
+                    $campaignEdit = $candidateCampaign;
+                    break;
+                }
+            }
+
+            if ($campaignEdit === null) {
+                if ($feedback === null) {
+                    $feedback = [
+                        'success' => false,
+                        'message' => 'Campagna non trovata.',
+                        'error' => 'Seleziona una campagna valida da modificare.',
+                    ];
+                }
+                $campaignEditForm = null;
+                $campaignEditId = 0;
+                $campaignsOpenOverride = true;
+            }
+        }
+
     $auditPage = isset($_GET['audit_page']) ? max((int) $_GET['audit_page'], 1) : 1;
         $auditPerPage = isset($_GET['audit_per_page']) ? max(5, min((int) $_GET['audit_per_page'], 25)) : 10;
         $auditLogsResult = paginateAuditLogs($pdo, $auditPage, $auditPerPage);
@@ -1385,7 +1489,10 @@ switch ($page) {
             'operatorsOpen' => $operatorsOpenOverride,
             'fiscalProducts' => $productService->listForFiscalSettings(),
             'fiscalOpen' => $fiscalOpen,
-            'discountCampaigns' => $discountCampaignService->listAll(),
+            'discountCampaigns' => $discountCampaigns,
+            'campaignEdit' => $campaignEdit,
+            'campaignEditForm' => $campaignEditForm,
+            'campaignsOpen' => $campaignsOpenOverride,
             'isAdmin' => $isAdmin,
             'auditLogs' => $auditLogsResult['rows'],
             'auditPagination' => $auditLogsResult['pagination'],
@@ -1414,7 +1521,7 @@ switch ($page) {
         unset($_SESSION['security_recovery_codes']);
 
         if ($method === 'POST') {
-            $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
+            $action = InputFilter::string($_POST['action'] ?? '', 40);
             $redirectParams = [];
             $message = null;
 
@@ -1439,7 +1546,7 @@ switch ($page) {
                     'message' => 'Configurazione MFA annullata.',
                 ];
             } elseif ($action === 'confirm_setup') {
-                $code = isset($_POST['mfa_code']) ? (string) $_POST['mfa_code'] : '';
+                $code = InputFilter::string($_POST['mfa_code'] ?? '', 32, true, false);
                 $setupResult = $authController->confirmMfaSetup($userId, $code);
                 if ($setupResult['success'] ?? false) {
                     $_SESSION['security_recovery_codes'] = $setupResult['recovery_codes'] ?? [];
@@ -1455,14 +1562,14 @@ switch ($page) {
                     $redirectParams['setup'] = 1;
                 }
             } elseif ($action === 'disable_mfa') {
-                $code = isset($_POST['mfa_code']) ? (string) $_POST['mfa_code'] : '';
+                $code = InputFilter::string($_POST['mfa_code'] ?? '', 32, true, false);
                 $disableResult = $authController->disableMfa($userId, $code, false);
                 $message = [
                     'success' => $disableResult['success'] ?? false,
                     'message' => $disableResult['message'] ?? ($disableResult['error'] ?? 'Operazione completata.'),
                 ];
             } elseif ($action === 'regenerate_codes') {
-                $code = isset($_POST['mfa_code']) ? (string) $_POST['mfa_code'] : '';
+                $code = InputFilter::string($_POST['mfa_code'] ?? '', 32, true, false);
                 $regenResult = $authController->regenerateRecoveryCodes($userId, $code);
                 if ($regenResult['success'] ?? false) {
                     $_SESSION['security_recovery_codes'] = $regenResult['recovery_codes'] ?? [];
@@ -2037,10 +2144,17 @@ function render(string $view, array $params = [], bool $layout = true): void
     if ($layout) {
         ob_start();
         require $viewPath;
-        $content = ob_get_clean();
+        $content = Csrf::injectIntoForms(ob_get_clean() ?: '');
+
+        ob_start();
         require __DIR__ . '/../views/layout.php';
+        $layoutOutput = ob_get_clean();
+        echo Csrf::injectIntoForms($layoutOutput ?: '');
     } else {
+        ob_start();
         require $viewPath;
+        $viewOutput = ob_get_clean();
+        echo Csrf::injectIntoForms($viewOutput ?: '');
     }
 }
 

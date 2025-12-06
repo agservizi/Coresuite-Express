@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Helpers\RateLimiter;
 use DateInterval;
 use DateTimeImmutable;
 use PDO;
@@ -16,6 +17,8 @@ final class CustomerPortalAuthService
     private const SESSION_KEY = 'portal_account';
     private const REMEMBER_COOKIE = 'portal_session';
     private const REMEMBER_LIFETIME_DAYS = 14;
+    private const LOGIN_ATTEMPT_LIMIT = 5;
+    private const LOGIN_LOCK_SECONDS = 900;
 
     public function __construct(private PDO $pdo)
     {
@@ -27,14 +30,20 @@ final class CustomerPortalAuthService
     /**
      * @return array{success:bool, account?:array<string, mixed>, errors?:array<int, string>}
      */
-    public function login(string $email, string $password, bool $remember = false): array
+    public function login(string $email, string $password, bool $remember = false, ?string $clientIp = null): array
     {
-    $normalizedEmail = trim((function_exists('mb_strtolower') ? mb_strtolower($email) : strtolower($email)));
+        $normalizedEmail = trim((function_exists('mb_strtolower') ? mb_strtolower($email) : strtolower($email)));
         if ($normalizedEmail === '' || $password === '') {
             return [
                 'success' => false,
                 'errors' => ['Inserisci email e password.'],
             ];
+        }
+
+        $throttleKeys = $this->loginThrottleKeys($normalizedEmail, $clientIp);
+        $throttleBlock = $this->checkLoginThrottle($throttleKeys);
+        if ($throttleBlock !== null) {
+            return $throttleBlock;
         }
 
         $stmt = $this->pdo->prepare(
@@ -45,7 +54,7 @@ final class CustomerPortalAuthService
         $stmt->execute([':email' => $normalizedEmail]);
         $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$account || !is_string($account['password_hash']) || $account['password_hash'] === '') {
+        if (!$account || !is_string($account['password_hash']) || $account['password_hash'] === '') {
             return [
                 'success' => false,
                 'errors' => ['Credenziali non valide.'],
@@ -53,11 +62,14 @@ final class CustomerPortalAuthService
         }
 
         if (!password_verify($password, $account['password_hash'])) {
+            $this->recordFailedLogin($throttleKeys);
             return [
                 'success' => false,
                 'errors' => ['Credenziali non valide.'],
             ];
         }
+
+        $this->clearLoginAttempts($throttleKeys);
 
         $accountData = [
             'id' => (int) $account['id'],
@@ -386,5 +398,61 @@ final class CustomerPortalAuthService
             'samesite' => 'Lax',
         ]);
         unset($_COOKIE[self::REMEMBER_COOKIE]);
+    }
+
+    /**
+     * @return array{success:bool, errors:array<int, string>}|null
+     */
+    private function checkLoginThrottle(array $keys): ?array
+    {
+        foreach ($keys as $key) {
+            if (RateLimiter::tooManyAttempts($key, self::LOGIN_ATTEMPT_LIMIT, self::LOGIN_LOCK_SECONDS)) {
+                $retryAfter = RateLimiter::availableIn($key);
+                return [
+                    'success' => false,
+                    'errors' => [$this->formatThrottleMessage($retryAfter)],
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    private function loginThrottleKeys(string $email, ?string $clientIp): array
+    {
+        $keys = [];
+        if ($clientIp !== null && $clientIp !== '') {
+            $keys[] = 'portal:ip:' . sha1($clientIp);
+        }
+        if ($email !== '') {
+            $keys[] = 'portal:email:' . sha1($email);
+        }
+
+        return $keys;
+    }
+
+    private function recordFailedLogin(array $keys): void
+    {
+        foreach ($keys as $key) {
+            RateLimiter::hit($key, self::LOGIN_LOCK_SECONDS);
+        }
+    }
+
+    private function clearLoginAttempts(array $keys): void
+    {
+        foreach ($keys as $key) {
+            RateLimiter::clear($key);
+        }
+    }
+
+    private function formatThrottleMessage(int $seconds): string
+    {
+        $seconds = max(1, $seconds);
+        if ($seconds < 60) {
+            return 'Troppi tentativi. Riprova tra ' . $seconds . ' secondi.';
+        }
+
+        $minutes = (int) ceil($seconds / 60);
+        return 'Troppi tentativi. Riprova tra ' . $minutes . ' minut' . ($minutes === 1 ? 'o' : 'i') . '.';
     }
 }

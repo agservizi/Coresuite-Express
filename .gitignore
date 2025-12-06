@@ -21,6 +21,11 @@
 # Temporary uploads and runtime artifacts
 /storage/uploads/
 /storage/temp/
+/storage/app/rate_limits.json
+
+# PHPUnit artifacts
+/.phpunit.cache/
+phpunit.xml.dist.bak
 
 # OS generated files
 .DS_Store
